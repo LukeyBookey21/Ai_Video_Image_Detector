@@ -51,8 +51,10 @@ async def health_check():
     return {
         "status": "ok",
         "ml_model_loaded": ai_detector.ml_mode,
+        "ml_models": ai_detector.ml_models_loaded,
         "detection_mode": "ml_ensemble" if ai_detector.ml_mode else "heuristic_only",
-        "ml_model_error": ai_detector.vit.error if not ai_detector.ml_mode else None,
+        "analyzers": ["frequency", "statistical", "texture", "srm", "metadata"]
+            + (["ml_primary", "ml_deepfake"] if ai_detector.ml_mode else []),
     }
 
 
@@ -74,7 +76,7 @@ async def detect_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Could not open image file.")
 
     start_time = time.time()
-    result = ai_detector.detect_image(image)
+    result = ai_detector.detect_image(image, raw_bytes=contents)
     elapsed = round(time.time() - start_time, 2)
 
     return {

@@ -1,38 +1,79 @@
 """
-AI Image Detection Module — Ensemble with ML Model
+AI Image Detection Module — Multi-Model Ensemble
 
-Detection signals:
-1. ViT ML Model (primary) — Pre-trained Vision Transformer from HuggingFace
-2. DCT Frequency Analysis — detects GAN/diffusion artifacts in frequency domain
-3. Statistical Analysis — analyzes pixel distribution, noise patterns, color stats
-4. Texture Analysis — detects unnatural smoothness/patterns via local variance
+Detection signals (7 total):
+1. ViT ML Model (primary) — Organika/sdxl-detector for diffusion model detection
+2. Deepfake ML Model — prithivMLmods deepfake detector for face/video fakes
+3. DCT Frequency Analysis — spectral artifacts in frequency domain
+4. FFT Power Spectrum — 1/f power law deviation analysis
+5. Statistical/Noise Analysis — pixel distributions, noise patterns, color stats
+6. Texture & Edge Analysis — local variance, edge density, gradient patterns
+7. SRM Noise Fingerprint — steganalysis-based noise residual patterns
+8. Metadata Analysis — EXIF, compression artifacts, format anomalies
 
-The ML model is downloaded on first run (~350MB) and provides ~94% accuracy.
-If unavailable, falls back to heuristic-only mode.
+Ensemble scoring with calibrated confidence weighting.
 """
 
 import io
+import struct
 import numpy as np
 from PIL import Image, ImageFilter
+from PIL.ExifTags import TAGS
 from scipy.fft import dctn, fft2
 from scipy.stats import kurtosis, skew, entropy
+from scipy.ndimage import uniform_filter, convolve
 
-# Try to import ML libraries (optional)
+# Try to import ML libraries
 _HAS_ML = False
 try:
     from transformers import pipeline as hf_pipeline
     _HAS_ML = True
 except ImportError:
-    print("transformers not installed — running in heuristic-only mode.")
-    print("For better accuracy: pip install torch transformers")
+    pass
+
+
+# ─── SRM Filters (Steganalysis Rich Model) ───────────────────────────────────
+
+SRM_FILTER_1 = np.array([
+    [0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0],
+    [0,  1, -2,  1,  0],
+    [0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0],
+], dtype=np.float64)
+
+SRM_FILTER_2 = np.array([
+    [0,  0,  0,  0,  0],
+    [0,  0,  1,  0,  0],
+    [0,  0, -2,  0,  0],
+    [0,  0,  1,  0,  0],
+    [0,  0,  0,  0,  0],
+], dtype=np.float64)
+
+SRM_FILTER_3 = np.array([
+    [0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0],
+    [0,  0, -1,  1,  0],
+    [0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0],
+], dtype=np.float64)
+
+SRM_FILTER_EDGE = np.array([
+    [-1, 2, -2, 2, -1],
+    [ 2,-6,  8,-6,  2],
+    [-2, 8,-12, 8, -2],
+    [ 2,-6,  8,-6,  2],
+    [-1, 2, -2, 2, -1],
+], dtype=np.float64) / 12.0
 
 
 class ViTDetector:
     """Pre-trained Vision Transformer for AI image detection."""
 
-    def __init__(self):
+    def __init__(self, model_name, label_map=None):
         self.pipe = None
-        self.model_name = "Organika/sdxl-detector"
+        self.model_name = model_name
+        self.label_map = label_map or {}
         self.available = False
         self.error = None
 
@@ -40,60 +81,58 @@ class ViTDetector:
         if not _HAS_ML:
             self.error = "torch/transformers not installed"
             return False
-
         try:
-            print(f"Downloading ML model: {self.model_name} (~350MB, first run only)...")
-            self.pipe = hf_pipeline(
-                "image-classification",
-                model=self.model_name,
-                device=-1,  # CPU
-            )
+            print(f"  Loading: {self.model_name}...")
+            self.pipe = hf_pipeline("image-classification", model=self.model_name, device=-1)
             self.available = True
-            print("ML model loaded successfully!")
+            print(f"  Loaded: {self.model_name}")
             return True
         except Exception as e:
             self.error = str(e)
-            print(f"ML model failed to load: {e}")
-            print("Falling back to heuristic-only mode.")
+            print(f"  Failed: {self.model_name}: {e}")
             return False
 
     def predict(self, image: Image.Image) -> float:
-        """Returns AI probability as 0.0 to 1.0"""
         if not self.available or self.pipe is None:
             return None
-
         try:
             results = self.pipe(image)
             scores = {r["label"].lower(): r["score"] for r in results}
 
-            # Model outputs "artificial" vs "human" labels
-            ai_score = scores.get("artificial", scores.get("ai", scores.get("fake", 0.0)))
+            # Try known AI labels
+            for label_key in ["artificial", "ai", "fake", "deepfake", "ai_generated"]:
+                if label_key in scores:
+                    return scores[label_key]
 
-            # Fallback if labels don't match
-            if ai_score == 0.0 and results:
+            # Check label_map
+            for mapped_label, target in self.label_map.items():
+                if mapped_label in scores:
+                    return scores[mapped_label] if target == "ai" else 1.0 - scores[mapped_label]
+
+            # Fallback: infer from first result
+            if results:
                 label = results[0]["label"].lower()
                 score = results[0]["score"]
                 if any(k in label for k in ["artificial", "ai", "fake", "generated"]):
-                    ai_score = score
+                    return score
                 else:
-                    ai_score = 1.0 - score
-
-            return ai_score
+                    return 1.0 - score
+            return None
         except Exception as e:
-            print(f"ML prediction error: {e}")
+            print(f"  ML prediction error ({self.model_name}): {e}")
             return None
 
 
 class FrequencyAnalyzer:
-    """Detects AI-generated images using DCT and FFT frequency analysis."""
+    """DCT + FFT frequency domain analysis."""
 
     def analyze(self, image: Image.Image) -> dict:
         img_gray = np.array(image.convert("L").resize((256, 256)), dtype=np.float64)
 
-        # --- DCT Analysis ---
+        # ── DCT Analysis ──
         dct_coeffs = dctn(img_gray, norm="ortho")
         magnitude = np.abs(dct_coeffs)
-        log_magnitude = np.log1p(magnitude)
+        log_mag = np.log1p(magnitude)
 
         h, w = magnitude.shape
         q = h // 4
@@ -101,77 +140,103 @@ class FrequencyAnalyzer:
         mid = magnitude[q:2*q, q:2*q]
         high = magnitude[2*q:, 2*q:]
 
-        low_energy = np.mean(low)
-        mid_energy = np.mean(mid)
-        high_energy = np.mean(high)
-        total_energy = low_energy + mid_energy + high_energy + 1e-10
+        low_e = np.mean(low)
+        mid_e = np.mean(mid)
+        high_e = np.mean(high)
+        total_e = low_e + mid_e + high_e + 1e-10
 
-        high_ratio = high_energy / total_energy
-        mid_ratio = mid_energy / total_energy
+        high_ratio = high_e / total_e
+        mid_ratio = mid_e / total_e
 
-        spectral_vals = log_magnitude.flatten()
-        spectral_vals = spectral_vals[spectral_vals > 0]
-        geo_mean = np.exp(np.mean(np.log(spectral_vals + 1e-10)))
-        arith_mean = np.mean(spectral_vals) + 1e-10
+        # Spectral flatness (Wiener entropy)
+        sv = log_mag.flatten()
+        sv = sv[sv > 0]
+        geo_mean = np.exp(np.mean(np.log(sv + 1e-10)))
+        arith_mean = np.mean(sv) + 1e-10
         spectral_flatness = geo_mean / arith_mean
 
-        # --- FFT Analysis ---
+        # ── FFT + Radial Power Spectrum ──
         fft_result = fft2(img_gray)
-        fft_magnitude = np.abs(np.fft.fftshift(fft_result))
-        fft_log = np.log1p(fft_magnitude)
+        fft_mag = np.abs(np.fft.fftshift(fft_result))
+        fft_log = np.log1p(fft_mag)
 
         cy, cx = h // 2, w // 2
         Y, X = np.ogrid[:h, :w]
         r = np.sqrt((X - cx)**2 + (Y - cy)**2).astype(int)
         max_r = min(cy, cx)
-        radial_profile = np.zeros(max_r)
+        radial = np.zeros(max_r)
         for i in range(max_r):
             mask = r == i
             if np.any(mask):
-                radial_profile[i] = np.mean(fft_log[mask])
+                radial[i] = np.mean(fft_log[mask])
 
-        if len(radial_profile) > 10:
-            freqs = np.arange(1, len(radial_profile))
-            power = radial_profile[1:]
+        # Power law slope (natural images ≈ -1.0 to -1.5)
+        slope = -1.0
+        if len(radial) > 10:
+            freqs = np.arange(1, len(radial))
+            power = radial[1:]
             valid = power > 0
             if np.sum(valid) > 5:
-                log_f = np.log(freqs[valid])
-                log_p = np.log(power[valid])
-                slope = np.polyfit(log_f, log_p, 1)[0]
-            else:
-                slope = -1.0
-        else:
-            slope = -1.0
+                slope = np.polyfit(np.log(freqs[valid]), np.log(power[valid]), 1)[0]
 
-        slope_deviation = abs(slope - (-1.2))
+        slope_dev = abs(slope - (-1.2))
 
-        # --- Scoring ---
+        # ── DCT Block Artifact Analysis ──
+        # JPEG-like block artifacts from AI generators
+        block_scores = []
+        for bsize in [8, 16]:
+            block_boundary_energy = 0
+            block_interior_energy = 0
+            for y in range(0, h - bsize, bsize):
+                for x in range(0, w - bsize, bsize):
+                    block = img_gray[y:y+bsize, x:x+bsize]
+                    # Edge energy at block boundaries
+                    if y > 0:
+                        block_boundary_energy += np.mean(np.abs(img_gray[y, x:x+bsize] - img_gray[y-1, x:x+bsize]))
+                    block_interior_energy += np.mean(np.abs(np.diff(block, axis=0)))
+            ratio = block_boundary_energy / (block_interior_energy + 1e-10)
+            block_scores.append(ratio)
+
+        block_artifact_score = np.mean(block_scores)
+
+        # ── Scoring ──
         score = 0.0
-        if high_ratio < 0.01:
-            score += 0.2
-        elif high_ratio < 0.03:
-            score += 0.15
-        elif high_ratio > 0.15:
-            score += 0.1
 
-        if spectral_flatness > 0.75:
-            score += 0.25
-        elif spectral_flatness > 0.55:
+        # High-freq energy
+        if high_ratio < 0.005:
+            score += 0.22
+        elif high_ratio < 0.02:
             score += 0.15
-        elif spectral_flatness > 0.4:
+        elif high_ratio < 0.04:
             score += 0.08
 
-        if slope_deviation > 0.8:
+        # Spectral flatness
+        if spectral_flatness > 0.80:
             score += 0.25
-        elif slope_deviation > 0.5:
-            score += 0.2
-        elif slope_deviation > 0.3:
+        elif spectral_flatness > 0.60:
+            score += 0.18
+        elif spectral_flatness > 0.45:
+            score += 0.10
+
+        # Power law deviation
+        if slope_dev > 0.9:
+            score += 0.28
+        elif slope_dev > 0.6:
+            score += 0.20
+        elif slope_dev > 0.35:
             score += 0.12
 
-        if mid_ratio > 0.2:
+        # Mid-frequency
+        if mid_ratio > 0.25:
             score += 0.15
-        elif mid_ratio > 0.1:
+        elif mid_ratio > 0.12:
             score += 0.08
+
+        # Block artifacts
+        if block_artifact_score > 1.5:
+            score += 0.10
+        elif block_artifact_score < 0.5:
+            score += 0.08  # Unnaturally smooth boundaries
 
         return {
             "ai_probability": round(min(max(score, 0.0), 1.0), 4),
@@ -179,132 +244,201 @@ class FrequencyAnalyzer:
             "mid_freq_ratio": round(mid_ratio, 6),
             "spectral_flatness": round(float(spectral_flatness), 4),
             "power_law_slope": round(float(slope), 4),
-            "slope_deviation": round(float(slope_deviation), 4),
+            "slope_deviation": round(float(slope_dev), 4),
+            "block_artifact": round(float(block_artifact_score), 4),
         }
 
 
 class StatisticalAnalyzer:
-    """Analyzes pixel-level statistics to detect AI-generated content."""
+    """Pixel statistics, noise patterns, color analysis."""
 
     def analyze(self, image: Image.Image) -> dict:
         img = np.array(image.convert("RGB").resize((512, 512)), dtype=np.float64)
         scores = []
 
+        # ── Channel Statistics ──
         channel_names = ["R", "G", "B"]
         channel_stats = {}
         for i, name in enumerate(channel_names):
             ch = img[:, :, i].flatten()
-            k = float(kurtosis(ch)) if np.std(ch) > 0.01 else 0.0
-            s = float(skew(ch)) if np.std(ch) > 0.01 else 0.0
+            std = np.std(ch)
+            k = float(kurtosis(ch)) if std > 0.01 else 0.0
+            s = float(skew(ch)) if std > 0.01 else 0.0
             k = k if np.isfinite(k) else 0.0
             s = s if np.isfinite(s) else 0.0
-            channel_stats[name] = {"mean": np.mean(ch), "std": np.std(ch), "kurtosis": k, "skewness": s}
+            channel_stats[name] = {"mean": np.mean(ch), "std": std, "kurtosis": k, "skewness": s}
 
         avg_kurtosis = np.mean([abs(channel_stats[c]["kurtosis"]) for c in channel_names])
-        if avg_kurtosis < 1.0:
-            scores.append(0.2)
-        elif avg_kurtosis < 2.0:
-            scores.append(0.12)
-        elif avg_kurtosis > 6.0:
-            scores.append(0.1)
+        if avg_kurtosis < 0.8:
+            score_k = 0.22
+        elif avg_kurtosis < 1.5:
+            score_k = 0.15
+        elif avg_kurtosis < 2.5:
+            score_k = 0.08
+        elif avg_kurtosis > 7.0:
+            score_k = 0.12
+        else:
+            score_k = 0.0
+        scores.append(score_k)
 
+        # ── Multi-Scale Noise Analysis ──
         img_pil = image.convert("L").resize((512, 512))
-        blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=2))
-        noise = np.array(img_pil, dtype=np.float64) - np.array(blurred, dtype=np.float64)
-        noise_std = np.std(noise)
-        noise_kurtosis = float(kurtosis(noise.flatten()))
-        noise_kurtosis = noise_kurtosis if np.isfinite(noise_kurtosis) else 0.0
+        noise_scores = []
+        for radius in [1, 2, 4]:
+            blurred = img_pil.filter(ImageFilter.GaussianBlur(radius=radius))
+            noise = np.array(img_pil, dtype=np.float64) - np.array(blurred, dtype=np.float64)
+            ns = np.std(noise)
+            nk = float(kurtosis(noise.flatten()))
+            nk = nk if np.isfinite(nk) else 0.0
+            noise_scores.append((ns, nk))
 
-        if noise_std < 2.0:
-            scores.append(0.25)
-        elif noise_std < 4.0:
+        # Primary noise (radius=2)
+        noise_std = noise_scores[1][0]
+        noise_kurtosis = noise_scores[1][1]
+
+        # Noise consistency across scales
+        noise_stds = [ns for ns, _ in noise_scores]
+        noise_consistency = np.std(noise_stds) / (np.mean(noise_stds) + 1e-10)
+
+        if noise_std < 1.5:
+            scores.append(0.28)
+        elif noise_std < 3.0:
+            scores.append(0.18)
+        elif noise_std < 5.0:
+            scores.append(0.10)
+
+        if abs(noise_kurtosis) > 6.0:
             scores.append(0.15)
-        elif noise_std < 6.0:
-            scores.append(0.08)
+        elif abs(noise_kurtosis) > 3.5:
+            scores.append(0.10)
 
-        if abs(noise_kurtosis) > 5.0:
-            scores.append(0.15)
-        elif abs(noise_kurtosis) > 3.0:
-            scores.append(0.08)
+        # AI images have unnaturally consistent noise across scales
+        if noise_consistency < 0.15:
+            scores.append(0.12)
 
+        # ── Color Channel Correlation ──
         r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
         try:
-            rg_corr = np.corrcoef(r.flatten(), g.flatten())[0, 1]
-            rb_corr = np.corrcoef(r.flatten(), b.flatten())[0, 1]
-            gb_corr = np.corrcoef(g.flatten(), b.flatten())[0, 1]
-            corrs = [c for c in [rg_corr, rb_corr, gb_corr] if np.isfinite(c)]
+            corrs_raw = [
+                np.corrcoef(r.flatten(), g.flatten())[0, 1],
+                np.corrcoef(r.flatten(), b.flatten())[0, 1],
+                np.corrcoef(g.flatten(), b.flatten())[0, 1],
+            ]
+            corrs = [c for c in corrs_raw if np.isfinite(c)]
             avg_corr = np.mean([abs(c) for c in corrs]) if corrs else 0.5
         except Exception:
             avg_corr = 0.5
 
-        if avg_corr > 0.95:
-            scores.append(0.1)
+        if avg_corr > 0.97:
+            scores.append(0.15)
+        elif avg_corr > 0.93:
+            scores.append(0.08)
 
+        # ── Histogram Smoothness ──
         for i in range(3):
             ch = img[:, :, i].flatten().astype(int)
-            hist, _ = np.histogram(ch, bins=256, range=(0, 255), density=True)
-            hist_entropy = float(entropy(hist + 1e-10))
-            if hist_entropy < 4.0:
-                scores.append(0.05)
+            hist, _ = np.histogram(ch, bins=256, range=(0, 255))
+            # AI images often have smoother histograms (less spiky)
+            hist_diff = np.abs(np.diff(hist.astype(float)))
+            hist_roughness = np.mean(hist_diff) / (np.mean(hist) + 1e-10)
+            if hist_roughness < 0.3:
+                scores.append(0.06)
                 break
+
+        # ── Saturation Analysis ──
+        hsv = np.array(image.convert("HSV").resize((512, 512)), dtype=np.float64)
+        sat = hsv[:, :, 1]
+        sat_std = np.std(sat)
+        if sat_std < 20:  # Unnaturally uniform saturation
+            scores.append(0.08)
 
         total_score = min(sum(scores), 1.0)
         return {
             "ai_probability": round(total_score, 4),
             "noise_std": round(noise_std, 4),
             "noise_kurtosis": round(noise_kurtosis, 4),
+            "noise_consistency": round(noise_consistency, 4),
             "avg_kurtosis": round(avg_kurtosis, 4),
             "color_correlation": round(avg_corr, 4),
         }
 
 
 class TextureAnalyzer:
-    """Analyzes local texture patterns to detect AI generation artifacts."""
+    """Local texture, edge density, gradient analysis."""
 
     def analyze(self, image: Image.Image) -> dict:
         img_gray = np.array(image.convert("L").resize((256, 256)), dtype=np.float64)
 
-        from scipy.ndimage import uniform_filter
-        local_mean = uniform_filter(img_gray, size=8)
-        local_sq_mean = uniform_filter(img_gray**2, size=8)
-        local_var = local_sq_mean - local_mean**2
-        local_var = np.maximum(local_var, 0)
+        # ── Local Variance (multi-scale) ──
+        variances = []
+        for size in [4, 8, 16]:
+            lm = uniform_filter(img_gray, size=size)
+            lsm = uniform_filter(img_gray**2, size=size)
+            lv = np.maximum(lsm - lm**2, 0)
+            variances.append(np.mean(lv))
 
-        avg_local_var = np.mean(local_var)
-        var_of_var = np.var(local_var)
+        avg_local_var = variances[1]  # size=8
+        var_of_var = np.var(np.maximum(uniform_filter(img_gray**2, size=8) - uniform_filter(img_gray, size=8)**2, 0))
+
+        # Variance ratio across scales (AI is more scale-invariant)
+        var_ratio = variances[0] / (variances[2] + 1e-10)
 
         scores = []
 
-        if avg_local_var < 50:
-            scores.append(0.25)
-        elif avg_local_var < 150:
-            scores.append(0.18)
-        elif avg_local_var < 400:
-            scores.append(0.08)
+        if avg_local_var < 30:
+            scores.append(0.28)
+        elif avg_local_var < 100:
+            scores.append(0.20)
+        elif avg_local_var < 250:
+            scores.append(0.10)
+        elif avg_local_var < 500:
+            scores.append(0.04)
 
-        if var_of_var < 2000:
-            scores.append(0.2)
-        elif var_of_var < 8000:
-            scores.append(0.12)
+        if var_of_var < 1000:
+            scores.append(0.22)
+        elif var_of_var < 5000:
+            scores.append(0.14)
+        elif var_of_var < 12000:
+            scores.append(0.06)
 
+        # Scale invariance (AI tends to be more uniform across scales)
+        if 0.8 < var_ratio < 1.3:
+            scores.append(0.10)
+
+        # ── Edge Analysis ──
         edges = np.array(image.convert("L").resize((256, 256)).filter(ImageFilter.FIND_EDGES), dtype=np.float64)
         edge_density = np.mean(edges > 30)
+        edge_std = np.std(edges)
 
-        if edge_density < 0.03:
-            scores.append(0.2)
-        elif edge_density < 0.08:
-            scores.append(0.12)
-        elif edge_density > 0.4:
-            scores.append(0.05)
+        if edge_density < 0.02:
+            scores.append(0.22)
+        elif edge_density < 0.06:
+            scores.append(0.14)
+        elif edge_density < 0.10:
+            scores.append(0.06)
 
+        # Low edge variance = uniform edge distribution (AI-like)
+        if edge_std < 15:
+            scores.append(0.10)
+
+        # ── Gradient Analysis ──
         gy, gx = np.gradient(img_gray)
-        gradient_magnitude = np.sqrt(gx**2 + gy**2)
-        grad_entropy_val = float(entropy(np.histogram(gradient_magnitude.flatten(), bins=64, density=True)[0] + 1e-10))
+        grad_mag = np.sqrt(gx**2 + gy**2)
+        grad_entropy_val = float(entropy(np.histogram(grad_mag.flatten(), bins=64, density=True)[0] + 1e-10))
 
-        if grad_entropy_val < 1.5:
+        # Gradient orientation uniformity
+        grad_angle = np.arctan2(gy, gx)
+        angle_hist, _ = np.histogram(grad_angle.flatten(), bins=36, density=True)
+        angle_entropy = float(entropy(angle_hist + 1e-10))
+
+        if grad_entropy_val < 1.2:
             scores.append(0.15)
-        elif grad_entropy_val < 2.5:
+        elif grad_entropy_val < 2.0:
             scores.append(0.08)
+
+        # Very uniform gradient orientations (AI tends to be smoother)
+        if angle_entropy > 3.5:
+            scores.append(0.06)
 
         total_score = min(sum(scores), 1.0)
         return {
@@ -312,110 +446,429 @@ class TextureAnalyzer:
             "avg_local_variance": round(float(avg_local_var), 2),
             "variance_of_variance": round(float(var_of_var), 2),
             "edge_density": round(float(edge_density), 4),
+            "edge_std": round(float(edge_std), 2),
             "gradient_entropy": round(float(grad_entropy_val), 4),
+            "var_ratio": round(float(var_ratio), 4),
+        }
+
+
+class SRMAnalyzer:
+    """Steganalysis Rich Model noise residual analysis.
+
+    Uses SRM high-pass filters to extract noise residuals, then analyzes
+    their statistical properties. AI-generated images have different
+    noise fingerprints than camera-captured photos.
+    """
+
+    def analyze(self, image: Image.Image) -> dict:
+        img_gray = np.array(image.convert("L").resize((256, 256)), dtype=np.float64)
+
+        residuals = []
+        for filt in [SRM_FILTER_1, SRM_FILTER_2, SRM_FILTER_3, SRM_FILTER_EDGE]:
+            res = convolve(img_gray, filt, mode='reflect')
+            residuals.append(res)
+
+        scores = []
+
+        # ── Residual statistics ──
+        all_residual_stds = []
+        all_residual_kurtoses = []
+        for res in residuals:
+            flat = res.flatten()
+            std = np.std(flat)
+            k = float(kurtosis(flat))
+            k = k if np.isfinite(k) else 0.0
+            all_residual_stds.append(std)
+            all_residual_kurtoses.append(k)
+
+        avg_res_std = np.mean(all_residual_stds)
+        avg_res_kurtosis = np.mean(all_residual_kurtoses)
+
+        # AI images have lower noise residuals (smoother)
+        if avg_res_std < 1.0:
+            scores.append(0.30)
+        elif avg_res_std < 2.5:
+            scores.append(0.20)
+        elif avg_res_std < 5.0:
+            scores.append(0.10)
+
+        # Residual kurtosis (AI differs from natural camera noise)
+        if avg_res_kurtosis > 15:
+            scores.append(0.20)
+        elif avg_res_kurtosis > 8:
+            scores.append(0.12)
+        elif avg_res_kurtosis < 1.0:
+            scores.append(0.15)
+
+        # ── Cross-filter consistency ──
+        # AI images have more consistent residuals across different filters
+        std_variation = np.std(all_residual_stds) / (np.mean(all_residual_stds) + 1e-10)
+        if std_variation < 0.3:
+            scores.append(0.15)
+        elif std_variation < 0.5:
+            scores.append(0.08)
+
+        # ── Spatial correlation of residuals ──
+        # AI residuals tend to be more spatially correlated
+        for res in residuals[:2]:
+            autocorr = np.corrcoef(res[:-1, :].flatten(), res[1:, :].flatten())[0, 1]
+            if np.isfinite(autocorr) and abs(autocorr) > 0.5:
+                scores.append(0.08)
+                break
+
+        total_score = min(sum(scores), 1.0)
+        return {
+            "ai_probability": round(total_score, 4),
+            "avg_residual_std": round(float(avg_res_std), 4),
+            "avg_residual_kurtosis": round(float(avg_res_kurtosis), 4),
+            "residual_consistency": round(float(std_variation), 4),
+        }
+
+
+class MetadataAnalyzer:
+    """Analyzes image metadata and compression for AI indicators."""
+
+    def analyze(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
+        scores = []
+        metadata_flags = []
+
+        # ── EXIF Analysis ──
+        exif_data = {}
+        try:
+            raw_exif = image.getexif()
+            if raw_exif:
+                for tag_id, value in raw_exif.items():
+                    tag_name = TAGS.get(tag_id, str(tag_id))
+                    exif_data[tag_name] = str(value)
+        except Exception:
+            pass
+
+        has_camera_info = any(k in exif_data for k in ["Make", "Model", "LensModel", "FocalLength"])
+        has_gps = any(k in exif_data for k in ["GPSInfo"])
+        has_datetime = any(k in exif_data for k in ["DateTime", "DateTimeOriginal"])
+        has_software = "Software" in exif_data
+
+        # No camera metadata at all = suspicious
+        if not has_camera_info and not has_gps and not has_datetime:
+            scores.append(0.20)
+            metadata_flags.append("no_camera_metadata")
+        elif has_camera_info:
+            scores.append(0.0)  # Has camera info = likely real
+            metadata_flags.append("has_camera_info")
+
+        # Known AI software tags
+        if has_software:
+            sw = exif_data.get("Software", "").lower()
+            ai_keywords = ["stable diffusion", "midjourney", "dall-e", "comfyui",
+                          "automatic1111", "novelai", "nai", "diffusion"]
+            if any(kw in sw for kw in ai_keywords):
+                scores.append(0.50)
+                metadata_flags.append(f"ai_software:{exif_data['Software']}")
+
+        # ── Image Properties ──
+        w, h = image.size
+
+        # Perfect power-of-2 or common AI dimensions
+        ai_dimensions = [
+            (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
+            (512, 768), (768, 512), (1024, 768), (768, 1024),
+            (1024, 1792), (1792, 1024), (1344, 768), (768, 1344),
+        ]
+        if (w, h) in ai_dimensions:
+            scores.append(0.12)
+            metadata_flags.append(f"ai_dimension:{w}x{h}")
+
+        # ── Compression Analysis ──
+        if raw_bytes:
+            # Check for unusual compression patterns
+            file_size = len(raw_bytes)
+            pixel_count = w * h
+            bits_per_pixel = (file_size * 8) / (pixel_count + 1)
+
+            # Very high or very low compression
+            if bits_per_pixel > 20:  # Nearly uncompressed
+                scores.append(0.06)
+            elif bits_per_pixel < 0.5:  # Extremely compressed
+                scores.append(0.04)
+
+        total_score = min(sum(scores), 1.0)
+        return {
+            "ai_probability": round(total_score, 4),
+            "has_camera_info": has_camera_info,
+            "has_gps": has_gps,
+            "has_datetime": has_datetime,
+            "flags": metadata_flags,
+            "dimensions": f"{w}x{h}",
         }
 
 
 class AIImageDetector:
-    """Ensemble detector: ML model (primary) + frequency + statistical + texture."""
+    """Multi-model ensemble detector with 7 analysis signals."""
 
     def __init__(self):
-        self.vit = ViTDetector()
+        self.vit_primary = ViTDetector("Organika/sdxl-detector")
+        self.vit_deepfake = ViTDetector("prithivMLmods/deepfake-detector-model-v1")
         self.freq_analyzer = FrequencyAnalyzer()
         self.stat_analyzer = StatisticalAnalyzer()
         self.texture_analyzer = TextureAnalyzer()
+        self.srm_analyzer = SRMAnalyzer()
+        self.metadata_analyzer = MetadataAnalyzer()
         self.ml_mode = False
-        self.classifier = True  # Health check compat
+        self.ml_models_loaded = []
+        self.classifier = True
 
     def load_model(self):
-        """Attempt to load the ML model. Falls back gracefully."""
-        if self.vit.load():
+        if not _HAS_ML:
+            print("ML libraries not available. Install with: python install_ml.py")
+            print("Running in heuristic-only mode.")
+            return
+
+        print("Loading ML models...")
+        loaded = []
+        if self.vit_primary.load():
+            loaded.append("sdxl-detector")
+        if self.vit_deepfake.load():
+            loaded.append("deepfake-detector")
+
+        if loaded:
             self.ml_mode = True
-            print("Running in ML + heuristic ensemble mode (best accuracy)")
+            self.ml_models_loaded = loaded
+            print(f"ML ensemble active: {', '.join(loaded)}")
         else:
-            self.ml_mode = False
-            print("Running in heuristic-only mode (install torch + transformers for better accuracy)")
+            print("No ML models loaded. Running heuristic-only mode.")
 
     @staticmethod
     def _sanitize(val):
-        if isinstance(val, (float, np.floating)) and not np.isfinite(val):
-            return 0.0
-        if isinstance(val, np.floating):
-            return float(val)
+        if isinstance(val, (float, np.floating)):
+            return 0.0 if not np.isfinite(val) else float(val)
+        if isinstance(val, np.integer):
+            return int(val)
         return val
 
     def _sanitize_dict(self, d):
-        return {k: self._sanitize_dict(v) if isinstance(v, dict) else self._sanitize(v) for k, v in d.items()}
+        result = {}
+        for k, v in d.items():
+            if isinstance(v, dict):
+                result[k] = self._sanitize_dict(v)
+            elif isinstance(v, list):
+                result[k] = [self._sanitize(x) if not isinstance(x, (dict, list)) else x for x in v]
+            else:
+                result[k] = self._sanitize(v)
+        return result
 
-    def detect_image(self, image: Image.Image) -> dict:
+    def detect_image(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
         image_rgb = image.convert("RGB")
 
-        # Run heuristic analyzers
-        freq_result = self._sanitize_dict(self.freq_analyzer.analyze(image_rgb))
-        stat_result = self._sanitize_dict(self.stat_analyzer.analyze(image_rgb))
-        texture_result = self._sanitize_dict(self.texture_analyzer.analyze(image_rgb))
+        # Run all heuristic analyzers
+        freq = self._sanitize_dict(self.freq_analyzer.analyze(image_rgb))
+        stat = self._sanitize_dict(self.stat_analyzer.analyze(image_rgb))
+        texture = self._sanitize_dict(self.texture_analyzer.analyze(image_rgb))
+        srm = self._sanitize_dict(self.srm_analyzer.analyze(image_rgb))
+        meta = self._sanitize_dict(self.metadata_analyzer.analyze(image_rgb, raw_bytes))
 
-        # Run ML model if available
-        vit_score = self.vit.predict(image_rgb) if self.ml_mode else None
+        # Run ML models
+        vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
+        vit2_score = self.vit_deepfake.predict(image_rgb) if self.ml_mode else None
 
-        if vit_score is not None:
-            # ML-weighted ensemble: ML model is the strongest signal
-            weights = {"ml_model": 0.55, "frequency": 0.20, "statistical": 0.15, "texture": 0.10}
+        # ── Ensemble Scoring ──
+        if vit1_score is not None or vit2_score is not None:
+            # ML + Heuristic ensemble
+            ml_scores = [s for s in [vit1_score, vit2_score] if s is not None]
+            ml_avg = np.mean(ml_scores)
+
+            weights = {
+                "ml_models": 0.45,
+                "frequency": 0.13,
+                "statistical": 0.12,
+                "texture": 0.10,
+                "srm": 0.12,
+                "metadata": 0.08,
+            }
             ensemble_score = (
-                weights["ml_model"] * vit_score
-                + weights["frequency"] * freq_result["ai_probability"]
-                + weights["statistical"] * stat_result["ai_probability"]
-                + weights["texture"] * texture_result["ai_probability"]
+                weights["ml_models"] * ml_avg
+                + weights["frequency"] * freq["ai_probability"]
+                + weights["statistical"] * stat["ai_probability"]
+                + weights["texture"] * texture["ai_probability"]
+                + weights["srm"] * srm["ai_probability"]
+                + weights["metadata"] * meta["ai_probability"]
             )
             mode = "ml_ensemble"
         else:
             # Heuristic-only ensemble
-            weights = {"frequency": 0.40, "statistical": 0.35, "texture": 0.25}
+            weights = {
+                "frequency": 0.25,
+                "statistical": 0.22,
+                "texture": 0.18,
+                "srm": 0.25,
+                "metadata": 0.10,
+            }
             ensemble_score = (
-                weights["frequency"] * freq_result["ai_probability"]
-                + weights["statistical"] * stat_result["ai_probability"]
-                + weights["texture"] * texture_result["ai_probability"]
+                weights["frequency"] * freq["ai_probability"]
+                + weights["statistical"] * stat["ai_probability"]
+                + weights["texture"] * texture["ai_probability"]
+                + weights["srm"] * srm["ai_probability"]
+                + weights["metadata"] * meta["ai_probability"]
             )
             mode = "heuristic_only"
 
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
-        verdict = "AI-Generated" if ensemble_score > 0.45 else "Real/Authentic"
-        confidence = ensemble_score if ensemble_score > 0.45 else (1.0 - ensemble_score)
+        verdict = "AI-Generated" if ensemble_score > 0.42 else "Real/Authentic"
+        confidence = ensemble_score if ensemble_score > 0.42 else (1.0 - ensemble_score)
 
         details = {
             "frequency_analysis": {
-                "ai_score": round(freq_result["ai_probability"] * 100, 1),
-                "spectral_flatness": freq_result["spectral_flatness"],
-                "power_law_slope": freq_result["power_law_slope"],
+                "ai_score": round(freq["ai_probability"] * 100, 1),
+                "spectral_flatness": freq.get("spectral_flatness", 0),
+                "power_law_slope": freq.get("power_law_slope", 0),
             },
             "statistical_analysis": {
-                "ai_score": round(stat_result["ai_probability"] * 100, 1),
-                "noise_level": stat_result["noise_std"],
-                "color_correlation": stat_result["color_correlation"],
+                "ai_score": round(stat["ai_probability"] * 100, 1),
+                "noise_level": stat.get("noise_std", 0),
+                "color_correlation": stat.get("color_correlation", 0),
             },
             "texture_analysis": {
-                "ai_score": round(texture_result["ai_probability"] * 100, 1),
-                "edge_density": texture_result["edge_density"],
-                "local_variance": texture_result["avg_local_variance"],
+                "ai_score": round(texture["ai_probability"] * 100, 1),
+                "edge_density": texture.get("edge_density", 0),
+                "local_variance": texture.get("avg_local_variance", 0),
+            },
+            "srm_analysis": {
+                "ai_score": round(srm["ai_probability"] * 100, 1),
+                "residual_std": srm.get("avg_residual_std", 0),
+                "residual_kurtosis": srm.get("avg_residual_kurtosis", 0),
+            },
+            "metadata_analysis": {
+                "ai_score": round(meta["ai_probability"] * 100, 1),
+                "flags": meta.get("flags", []),
+                "dimensions": meta.get("dimensions", ""),
             },
             "ensemble_weights": weights,
             "detection_mode": mode,
         }
 
-        if vit_score is not None:
-            details["ml_model"] = {
-                "ai_score": round(vit_score * 100, 1),
-                "model": self.vit.model_name,
+        if vit1_score is not None:
+            details["ml_model_primary"] = {
+                "ai_score": round(vit1_score * 100, 1),
+                "model": self.vit_primary.model_name,
             }
+        if vit2_score is not None:
+            details["ml_model_deepfake"] = {
+                "ai_score": round(vit2_score * 100, 1),
+                "model": self.vit_deepfake.model_name,
+            }
+
+        # ── Generate Explanation ──
+        explanation = self._generate_explanation(
+            verdict, ensemble_score, freq, stat, texture, srm, meta,
+            vit1_score, vit2_score, mode,
+        )
 
         return {
             "verdict": verdict,
             "confidence": round(confidence * 100, 1),
             "ai_probability": round(ensemble_score * 100, 1),
             "detection_mode": mode,
+            "explanation": explanation,
             "details": details,
         }
 
+    def _generate_explanation(self, verdict, score, freq, stat, texture, srm, meta,
+                              vit1, vit2, mode):
+        """Generate a human-readable explanation of what triggered the detection."""
+        reasons = []
+        mitigating = []
 
-# Singleton instance
+        # Collect strong signals
+        if vit1 is not None and vit1 > 0.6:
+            reasons.append(f"The ML model (SDXL detector) identified this as AI-generated with {vit1*100:.0f}% confidence")
+        if vit2 is not None and vit2 > 0.6:
+            reasons.append(f"The deepfake detector flagged this with {vit2*100:.0f}% confidence")
+
+        # Frequency
+        fs = freq["ai_probability"]
+        if fs > 0.5:
+            parts = []
+            if freq.get("slope_deviation", 0) > 0.5:
+                parts.append("its frequency spectrum deviates from the natural 1/f power law")
+            if freq.get("spectral_flatness", 0) > 0.6:
+                parts.append("the spectral energy distribution is unusually flat")
+            if parts:
+                reasons.append("Frequency analysis flagged this because " + " and ".join(parts))
+            else:
+                reasons.append("Frequency domain analysis detected anomalous spectral patterns")
+
+        # Statistical
+        ss = stat["ai_probability"]
+        if ss > 0.4:
+            parts = []
+            if stat.get("noise_std", 10) < 3:
+                parts.append(f"very low noise level ({stat['noise_std']:.1f} — real photos typically show 5-15)")
+            if stat.get("color_correlation", 0) > 0.95:
+                parts.append("unnaturally high color channel correlation")
+            if stat.get("noise_consistency", 1) < 0.15:
+                parts.append("noise is suspiciously consistent across scales")
+            if parts:
+                reasons.append("Statistical analysis found " + ", ".join(parts))
+
+        # Texture
+        ts = texture["ai_probability"]
+        if ts > 0.4:
+            parts = []
+            if texture.get("edge_density", 1) < 0.06:
+                parts.append("very few sharp edges (image is unusually smooth)")
+            if texture.get("avg_local_variance", 1000) < 200:
+                parts.append("low texture variation (surfaces lack natural micro-detail)")
+            if parts:
+                reasons.append("Texture analysis detected " + ", ".join(parts))
+
+        # SRM
+        srm_s = srm["ai_probability"]
+        if srm_s > 0.4:
+            parts = []
+            if srm.get("avg_residual_std", 10) < 2.5:
+                parts.append("noise residuals are weaker than expected from a real camera sensor")
+            if srm.get("avg_residual_kurtosis", 0) > 10:
+                parts.append("noise pattern has non-Gaussian characteristics unlike camera noise")
+            if parts:
+                reasons.append("SRM noise fingerprinting found " + ", ".join(parts))
+
+        # Metadata
+        ms = meta["ai_probability"]
+        flags = meta.get("flags", [])
+        if "no_camera_metadata" in flags:
+            reasons.append("No camera EXIF metadata found (real photos usually contain camera make/model/settings)")
+        if any("ai_software" in f for f in flags):
+            reasons.append("EXIF metadata contains known AI generation software tags")
+        if any("ai_dimension" in f for f in flags):
+            dim = meta.get("dimensions", "")
+            reasons.append(f"Image dimensions ({dim}) match common AI generator output sizes")
+
+        # Mitigating factors
+        if vit1 is not None and vit1 < 0.3:
+            mitigating.append("ML model considers this likely authentic")
+        if stat.get("noise_std", 0) > 8:
+            mitigating.append("natural-looking noise levels present")
+        if "has_camera_info" in flags:
+            mitigating.append("contains camera EXIF data")
+        if texture.get("edge_density", 0) > 0.15:
+            mitigating.append("rich edge detail consistent with real imagery")
+
+        # Build explanation
+        if verdict == "AI-Generated":
+            if reasons:
+                summary = "Key giveaways: " + ". ".join(reasons[:4]) + "."
+            else:
+                summary = "Multiple subtle signals across frequency, noise, and texture analysis suggest this is AI-generated, though no single factor was dominant."
+        else:
+            if mitigating:
+                summary = "This appears authentic. " + ". ".join(mitigating[:3]) + "."
+            else:
+                summary = "Analysis did not find strong indicators of AI generation."
+
+            if reasons:
+                summary += " Minor flags: " + ". ".join(reasons[:2]) + "."
+
+        return summary
+
+
+# Singleton
 detector = AIImageDetector()

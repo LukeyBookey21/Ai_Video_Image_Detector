@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import Header from './components/Header'
 import Upload from './components/Upload'
 import ResultCard from './components/ResultCard'
+import DetailedStats from './components/DetailedStats'
 import History from './components/History'
 
 const HISTORY_KEY = 'ai-detector-history'
@@ -50,8 +51,8 @@ export default function App() {
             Detect AI-Generated Content
           </h2>
           <p className="text-gray-400 max-w-lg mx-auto">
-            Upload an image or video to analyze it with our ensemble forensic pipeline.
-            Combines frequency, statistical, and texture analysis for reliable detection.
+            Upload an image or video to analyze with our 7-signal forensic pipeline.
+            Combines ML models, frequency, noise, texture, SRM, and metadata analysis.
           </p>
         </div>
 
@@ -72,8 +73,25 @@ export default function App() {
 
         {/* Result */}
         {result && (
-          <div className="mt-6">
+          <div className="mt-6 space-y-4">
             <ResultCard result={result} />
+
+            {/* Explanation */}
+            {result.explanation && (
+              <div className={`px-5 py-4 rounded-xl border text-sm leading-relaxed ${
+                result.verdict === 'AI-Generated'
+                  ? 'bg-red-500/5 border-red-500/30 text-red-300'
+                  : 'bg-green-500/5 border-green-500/30 text-green-300'
+              }`}>
+                <p className="font-medium text-xs uppercase tracking-wider mb-2 opacity-70">
+                  {result.verdict === 'AI-Generated' ? 'Why AI was detected' : 'Why this looks authentic'}
+                </p>
+                <p>{result.explanation}</p>
+              </div>
+            )}
+
+            {/* Detailed Stats */}
+            <DetailedStats result={result} />
           </div>
         )}
 
