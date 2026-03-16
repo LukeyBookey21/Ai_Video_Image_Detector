@@ -48,7 +48,12 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "model_loaded": ai_detector.classifier is not None}
+    return {
+        "status": "ok",
+        "ml_model_loaded": ai_detector.ml_mode,
+        "detection_mode": "ml_ensemble" if ai_detector.ml_mode else "heuristic_only",
+        "ml_model_error": ai_detector.vit.error if not ai_detector.ml_mode else None,
+    }
 
 
 @app.post("/api/detect/image")
