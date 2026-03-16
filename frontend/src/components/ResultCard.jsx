@@ -58,6 +58,14 @@ export default function ResultCard({ result }) {
           color={scoreColor(result.ai_probability)}
         />
 
+        {d.ml_model && (
+          <ScoreBar
+            label={`ML Model (${d.ml_model.model || 'ViT'})`}
+            score={d.ml_model.ai_score}
+            color={scoreColor(d.ml_model.ai_score)}
+          />
+        )}
+
         {d.frequency_analysis && (
           <ScoreBar
             label="Frequency Analysis (DCT + FFT)"
@@ -173,6 +181,9 @@ export default function ResultCard({ result }) {
       {/* Footer */}
       <div className="px-6 py-3 bg-gray-900/50 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
         <span>{result.file_type === 'video' ? 'Video' : 'Image'} analysis</span>
+        <span className={result.detection_mode === 'ml_ensemble' ? 'text-green-500' : 'text-yellow-500'}>
+          {result.detection_mode === 'ml_ensemble' ? 'ML + Heuristic' : 'Heuristic Only'}
+        </span>
         <span>{result.processing_time_seconds}s</span>
         <span>{result.file_size_mb} MB</span>
       </div>
