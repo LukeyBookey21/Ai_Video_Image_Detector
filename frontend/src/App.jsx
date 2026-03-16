@@ -51,8 +51,8 @@ export default function App() {
             Detect AI-Generated Content
           </h2>
           <p className="text-gray-400 max-w-lg mx-auto">
-            Upload an image or video to analyze with our 7-signal forensic pipeline.
-            Combines ML models, frequency, noise, texture, SRM, and metadata analysis.
+            Upload an image or video to analyze with our 9+ signal forensic pipeline.
+            Combines ML models, frequency, noise, texture, SRM, color space, face, and metadata analysis.
           </p>
         </div>
 
@@ -101,28 +101,28 @@ export default function App() {
         {/* Info */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Frequency Analysis</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">Frequency & Noise</h4>
             <p className="text-xs text-gray-500">
-              DCT + FFT spectral analysis detects artifacts in the frequency domain that are invisible to the human eye. AI images deviate from natural 1/f power law.
+              DCT + FFT spectral analysis, SRM noise fingerprinting, and multi-scale noise consistency. Detects artifacts invisible to the human eye.
             </p>
           </div>
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Statistical Analysis</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">Color & Face</h4>
             <p className="text-xs text-gray-500">
-              Analyzes noise patterns, pixel distributions, and color channel correlations. AI-generated content has distinct statistical fingerprints.
+              LAB/YCbCr color space forensics, face symmetry, skin texture, and boundary artifact detection for deepfakes.
             </p>
           </div>
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Texture & Video</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">Video & Temporal</h4>
             <p className="text-xs text-gray-500">
-              Detects unnatural smoothness and edge patterns. For video, extracts keyframes and analyzes each independently.
+              Optical flow, physiological signal (rPPG), cross-frame identity consistency, and background-foreground coherence analysis.
             </p>
           </div>
         </div>
       </main>
 
       <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900">
-        AI Detector v1.0 — Ensemble ML Detection Pipeline
+        AI Detector v2.0 — 9+ Signal Ensemble Detection Pipeline
       </footer>
     </div>
   )

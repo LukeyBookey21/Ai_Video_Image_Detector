@@ -603,7 +603,7 @@ class MetadataAnalyzer:
 
 
 class AIImageDetector:
-    """Multi-model ensemble detector with 7 analysis signals."""
+    """Multi-model ensemble detector with 9+ analysis signals."""
 
     def __init__(self):
         self.vit_primary = ViTDetector("Organika/sdxl-detector")
@@ -613,6 +613,13 @@ class AIImageDetector:
         self.texture_analyzer = TextureAnalyzer()
         self.srm_analyzer = SRMAnalyzer()
         self.metadata_analyzer = MetadataAnalyzer()
+
+        # Advanced analyzers
+        from color_analysis import ColorSpaceAnalyzer
+        from face_analysis import FaceAnalyzer
+        self.color_analyzer = ColorSpaceAnalyzer()
+        self.face_analyzer = FaceAnalyzer()
+
         self.ml_mode = False
         self.ml_models_loaded = []
         self.classifier = True
@@ -665,49 +672,66 @@ class AIImageDetector:
         texture = self._sanitize_dict(self.texture_analyzer.analyze(image_rgb))
         srm = self._sanitize_dict(self.srm_analyzer.analyze(image_rgb))
         meta = self._sanitize_dict(self.metadata_analyzer.analyze(image_rgb, raw_bytes))
+        color = self._sanitize_dict(self.color_analyzer.analyze(image_rgb))
+        face = self._sanitize_dict(self.face_analyzer.analyze(image_rgb))
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
         vit2_score = self.vit_deepfake.predict(image_rgb) if self.ml_mode else None
 
         # ── Ensemble Scoring ──
+        has_faces = face.get("faces_found", 0) > 0
+        face_weight = 0.08 if has_faces else 0.0
+
         if vit1_score is not None or vit2_score is not None:
-            # ML + Heuristic ensemble
             ml_scores = [s for s in [vit1_score, vit2_score] if s is not None]
             ml_avg = np.mean(ml_scores)
 
+            remaining = 1.0 - 0.40 - face_weight
             weights = {
-                "ml_models": 0.45,
-                "frequency": 0.13,
-                "statistical": 0.12,
-                "texture": 0.10,
-                "srm": 0.12,
-                "metadata": 0.08,
+                "ml_models": 0.40,
+                "frequency": remaining * 0.22,
+                "statistical": remaining * 0.20,
+                "texture": remaining * 0.16,
+                "srm": remaining * 0.20,
+                "color": remaining * 0.12,
+                "metadata": remaining * 0.10,
             }
+            if has_faces:
+                weights["face"] = face_weight
+
             ensemble_score = (
                 weights["ml_models"] * ml_avg
                 + weights["frequency"] * freq["ai_probability"]
                 + weights["statistical"] * stat["ai_probability"]
                 + weights["texture"] * texture["ai_probability"]
                 + weights["srm"] * srm["ai_probability"]
+                + weights["color"] * color["ai_probability"]
                 + weights["metadata"] * meta["ai_probability"]
+                + (weights.get("face", 0) * face.get("ai_probability", 0))
             )
             mode = "ml_ensemble"
         else:
-            # Heuristic-only ensemble
+            remaining = 1.0 - face_weight
             weights = {
-                "frequency": 0.25,
-                "statistical": 0.22,
-                "texture": 0.18,
-                "srm": 0.25,
-                "metadata": 0.10,
+                "frequency": remaining * 0.22,
+                "statistical": remaining * 0.20,
+                "texture": remaining * 0.16,
+                "srm": remaining * 0.22,
+                "color": remaining * 0.12,
+                "metadata": remaining * 0.08,
             }
+            if has_faces:
+                weights["face"] = face_weight
+
             ensemble_score = (
                 weights["frequency"] * freq["ai_probability"]
                 + weights["statistical"] * stat["ai_probability"]
                 + weights["texture"] * texture["ai_probability"]
                 + weights["srm"] * srm["ai_probability"]
+                + weights["color"] * color["ai_probability"]
                 + weights["metadata"] * meta["ai_probability"]
+                + (weights.get("face", 0) * face.get("ai_probability", 0))
             )
             mode = "heuristic_only"
 
@@ -736,6 +760,12 @@ class AIImageDetector:
                 "residual_std": srm.get("avg_residual_std", 0),
                 "residual_kurtosis": srm.get("avg_residual_kurtosis", 0),
             },
+            "color_analysis": {
+                "ai_score": round(color["ai_probability"] * 100, 1),
+                "chroma_gradient": color.get("lab_chroma_gradient", 0),
+                "luma_chroma_ratio": color.get("luma_chroma_ratio", 0),
+                "cbcr_correlation": color.get("cbcr_correlation", 0),
+            },
             "metadata_analysis": {
                 "ai_score": round(meta["ai_probability"] * 100, 1),
                 "flags": meta.get("flags", []),
@@ -744,6 +774,13 @@ class AIImageDetector:
             "ensemble_weights": weights,
             "detection_mode": mode,
         }
+
+        if has_faces:
+            details["face_analysis"] = {
+                "ai_score": round(face["ai_probability"] * 100, 1),
+                "faces_found": face.get("faces_found", 0),
+                "face_details": face.get("face_details", []),
+            }
 
         if vit1_score is not None:
             details["ml_model_primary"] = {
@@ -759,7 +796,7 @@ class AIImageDetector:
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
             verdict, ensemble_score, freq, stat, texture, srm, meta,
-            vit1_score, vit2_score, mode,
+            color, face, vit1_score, vit2_score, mode,
         )
 
         return {
@@ -772,7 +809,7 @@ class AIImageDetector:
         }
 
     def _generate_explanation(self, verdict, score, freq, stat, texture, srm, meta,
-                              vit1, vit2, mode):
+                              color, face, vit1, vit2, mode):
         """Generate a human-readable explanation of what triggered the detection."""
         reasons = []
         mitigating = []
@@ -830,6 +867,30 @@ class AIImageDetector:
                 parts.append("noise pattern has non-Gaussian characteristics unlike camera noise")
             if parts:
                 reasons.append("SRM noise fingerprinting found " + ", ".join(parts))
+
+        # Color space
+        cs = color["ai_probability"]
+        if cs > 0.3:
+            parts = []
+            if color.get("lab_chroma_gradient", 10) < 1.0:
+                parts.append("chrominance channels are unusually smooth (typical of AI generators)")
+            if color.get("luma_chroma_ratio", 0) > 5:
+                parts.append("luminance-to-chrominance noise ratio is abnormal")
+            if parts:
+                reasons.append("Color space analysis found " + ", ".join(parts))
+
+        # Face analysis
+        if face.get("faces_found", 0) > 0 and face.get("ai_probability", 0) > 0.3:
+            parts = []
+            for fd in face.get("face_details", []):
+                if fd.get("skin_noise", 10) < 3:
+                    parts.append("unnaturally smooth skin texture")
+                if fd.get("symmetry_diff", 20) < 8:
+                    parts.append("face is suspiciously symmetric")
+                if fd.get("boundary_gradient", 0) > 20:
+                    parts.append("sharp artifacts at face boundary (possible face swap)")
+            if parts:
+                reasons.append("Face analysis detected " + ", ".join(list(set(parts))[:3]))
 
         # Metadata
         ms = meta["ai_probability"]

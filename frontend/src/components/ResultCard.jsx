@@ -129,6 +129,24 @@ export default function ResultCard({ result }) {
           />
         )}
 
+        {d.color_analysis && (
+          <ScoreBar
+            label="Color Space (LAB + YCbCr)"
+            score={d.color_analysis.ai_score}
+            color={scoreColor(d.color_analysis.ai_score)}
+            compact
+          />
+        )}
+
+        {d.face_analysis && (
+          <ScoreBar
+            label={`Face Analysis (${d.face_analysis.faces_found} face${d.face_analysis.faces_found !== 1 ? 's' : ''})`}
+            score={d.face_analysis.ai_score}
+            color={scoreColor(d.face_analysis.ai_score)}
+            compact
+          />
+        )}
+
         {d.metadata_analysis && (
           <ScoreBar
             label="Metadata Analysis"
@@ -157,6 +175,18 @@ export default function ResultCard({ result }) {
           {d.texture_analysis?.edge_density != null && (
             <DetailChip label="Edge Density" value={d.texture_analysis.edge_density} />
           )}
+          {d.color_analysis?.chroma_gradient != null && (
+            <DetailChip label="Chroma Grad." value={d.color_analysis.chroma_gradient} />
+          )}
+          {d.color_analysis?.cbcr_correlation != null && (
+            <DetailChip label="CbCr Corr." value={d.color_analysis.cbcr_correlation} />
+          )}
+          {d.face_analysis?.face_details?.length > 0 && d.face_analysis.face_details.map((f, i) => (
+            <React.Fragment key={`face-${i}`}>
+              {f.skin_noise != null && <DetailChip label={`Face${i+1} Skin`} value={f.skin_noise} />}
+              {f.symmetry_diff != null && <DetailChip label={`Face${i+1} Symm`} value={f.symmetry_diff} />}
+            </React.Fragment>
+          ))}
           {d.metadata_analysis?.dimensions && (
             <DetailChip label="Dimensions" value={d.metadata_analysis.dimensions} />
           )}
@@ -167,6 +197,60 @@ export default function ResultCard({ result }) {
           ))}
         </div>
       </div>
+
+      {/* Heatmap overlay (image) */}
+      {result.heatmap && (
+        <div className="px-6 py-3 border-t border-gray-800/50">
+          <p className="text-xs font-medium text-indigo-400 uppercase tracking-wider mb-2">Artifact Heatmap</p>
+          <div className="rounded-lg overflow-hidden bg-gray-800">
+            <img
+              src={`data:image/jpeg;base64,${result.heatmap}`}
+              alt="Artifact heatmap overlay"
+              className="w-full h-auto"
+            />
+          </div>
+          <p className="text-xs text-gray-600 mt-1">Green = natural, Yellow = suspicious, Red = likely AI artifacts</p>
+        </div>
+      )}
+
+      {/* Advanced Video Analysis */}
+      {result.advanced_analysis && (
+        <div className="px-6 py-3 border-t border-gray-800/50">
+          <p className="text-xs font-medium text-purple-400 uppercase tracking-wider mb-2">Advanced Deepfake Detection</p>
+          <ScoreBar
+            label="Combined Advanced Score"
+            score={result.advanced_analysis.combined_score}
+            color={scoreColor(result.advanced_analysis.combined_score)}
+            compact
+          />
+          <div className="mt-2 space-y-1.5">
+            {result.advanced_analysis.physiological && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Physiological (rPPG)</span>
+                <span className={`font-mono ${result.advanced_analysis.physiological.ai_probability > 0.15 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  Signal: {result.advanced_analysis.physiological.signal_strength}
+                </span>
+              </div>
+            )}
+            {result.advanced_analysis.identity_consistency && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Identity Consistency</span>
+                <span className={`font-mono ${result.advanced_analysis.identity_consistency.ai_probability > 0.15 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  Score: {result.advanced_analysis.identity_consistency.consistency_score || 'N/A'}
+                </span>
+              </div>
+            )}
+            {result.advanced_analysis.bg_fg_coherence && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">BG/FG Coherence</span>
+                <span className={`font-mono ${result.advanced_analysis.bg_fg_coherence.ai_probability > 0.15 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {(result.advanced_analysis.bg_fg_coherence.ai_probability * 100).toFixed(1)}% AI
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Temporal analysis (video) */}
       {result.temporal_analysis && (

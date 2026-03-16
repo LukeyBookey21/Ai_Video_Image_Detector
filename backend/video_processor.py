@@ -1,7 +1,10 @@
 """
 Video Processing Module — Enhanced
 
-Frame extraction + per-frame analysis + temporal consistency checks.
+Frame extraction + per-frame analysis + temporal consistency checks +
+advanced deepfake detection (physiological signals, identity consistency,
+background-foreground coherence).
+
 AI videos often have frame-to-frame inconsistencies that real videos don't.
 """
 
@@ -11,12 +14,20 @@ from PIL import Image
 import cv2
 import numpy as np
 from detector import AIImageDetector
+from advanced_video import (
+    PhysiologicalAnalyzer,
+    IdentityConsistencyAnalyzer,
+    BackgroundForegroundAnalyzer,
+)
 
 
 class VideoProcessor:
     def __init__(self, detector: AIImageDetector, max_frames: int = 15):
         self.detector = detector
         self.max_frames = max_frames
+        self.physio_analyzer = PhysiologicalAnalyzer()
+        self.identity_analyzer = IdentityConsistencyAnalyzer()
+        self.bg_fg_analyzer = BackgroundForegroundAnalyzer()
 
     def extract_frames(self, video_path: str) -> tuple:
         cap = cv2.VideoCapture(video_path)
@@ -137,6 +148,110 @@ class VideoProcessor:
             "noise_consistency": round(float(noise_variation), 4),
         }
 
+    def analyze_advanced(self, frames: list) -> dict:
+        """Run advanced deepfake detection: physiological, identity, bg/fg."""
+        advanced = {}
+
+        # Physiological signal analysis (rPPG)
+        try:
+            physio = self.physio_analyzer.analyze_frames(frames)
+            advanced["physiological"] = physio
+        except Exception as e:
+            print(f"  Physiological analysis error: {e}")
+            advanced["physiological"] = {"signal_strength": 0.0, "ai_probability": 0.0}
+
+        # Cross-frame identity consistency
+        try:
+            identity = self.identity_analyzer.analyze_frames(frames)
+            advanced["identity_consistency"] = identity
+        except Exception as e:
+            print(f"  Identity consistency error: {e}")
+            advanced["identity_consistency"] = {"consistency_score": 0.0, "ai_probability": 0.0}
+
+        # Background-foreground coherence (sample a few frames)
+        bg_fg_scores = []
+        sample_indices = np.linspace(0, len(frames) - 1, min(5, len(frames)), dtype=int)
+        for idx in sample_indices:
+            try:
+                bg_fg = self.bg_fg_analyzer.analyze(frames[idx])
+                bg_fg_scores.append(bg_fg["ai_probability"])
+            except Exception:
+                pass
+
+        if bg_fg_scores:
+            advanced["bg_fg_coherence"] = {
+                "ai_probability": round(float(np.mean(bg_fg_scores)), 4),
+                "max_score": round(float(np.max(bg_fg_scores)), 4),
+                "frames_analyzed": len(bg_fg_scores),
+            }
+        else:
+            advanced["bg_fg_coherence"] = {"ai_probability": 0.0, "frames_analyzed": 0}
+
+        # Combined advanced score
+        adv_scores = [
+            advanced["physiological"]["ai_probability"],
+            advanced["identity_consistency"]["ai_probability"],
+            advanced["bg_fg_coherence"]["ai_probability"],
+        ]
+        advanced["combined_ai_probability"] = round(float(np.mean(adv_scores)), 4)
+
+        return advanced
+
+    def _generate_video_explanation(self, verdict, combined_score, avg_ai_score,
+                                     temporal, advanced) -> str:
+        """Generate human-readable explanation for video analysis."""
+        reasons = []
+        mitigating = []
+
+        # Frame-level signals
+        if avg_ai_score > 50:
+            reasons.append(f"Per-frame analysis detected AI artifacts (avg {avg_ai_score:.0f}% across frames)")
+
+        # Temporal signals
+        ts = temporal.get("temporal_score", 0)
+        if ts > 0.3:
+            parts = []
+            if temporal.get("flow_consistency", 1) < 0.5:
+                parts.append("unnaturally uniform motion patterns")
+            if temporal.get("noise_consistency", 1) < 0.1:
+                parts.append("suspiciously consistent noise across frames")
+            if parts:
+                reasons.append("Temporal analysis found " + ", ".join(parts))
+            else:
+                reasons.append("Temporal consistency patterns suggest AI generation")
+
+        # Advanced signals
+        if advanced:
+            physio = advanced.get("physiological", {})
+            if physio.get("ai_probability", 0) > 0.15:
+                reasons.append("No physiological signals (rPPG blood flow) detected in faces — real humans show subtle skin color changes from heartbeat")
+
+            identity = advanced.get("identity_consistency", {})
+            if identity.get("ai_probability", 0) > 0.15:
+                reasons.append("Facial proportions drift between frames — real faces have fixed geometry")
+
+            bg_fg = advanced.get("bg_fg_coherence", {})
+            if bg_fg.get("ai_probability", 0) > 0.15:
+                reasons.append("Noise/compression mismatch between face and background regions — suggests face was generated separately")
+
+        # Mitigating
+        if avg_ai_score < 30:
+            mitigating.append("per-frame analysis shows natural-looking imagery")
+        if ts < 0.1:
+            mitigating.append("temporal patterns appear natural")
+
+        if verdict == "AI-Generated":
+            if reasons:
+                return "Key giveaways: " + ". ".join(reasons[:4]) + "."
+            return "Multiple subtle signals across frame analysis and temporal consistency suggest this is AI-generated."
+        else:
+            summary = "This appears authentic."
+            if mitigating:
+                summary += " " + ". ".join(mitigating[:3]) + "."
+            if reasons:
+                summary += " Minor flags: " + ". ".join(reasons[:2]) + "."
+            return summary
+
     def analyze_video(self, video_path: str) -> dict:
         frames, raw_frames, video_info = self.extract_frames(video_path)
 
@@ -162,25 +277,37 @@ class VideoProcessor:
         # Temporal consistency analysis
         temporal = self.analyze_temporal_consistency(raw_frames)
 
-        avg_ai_score = np.mean(ai_scores)
-        max_ai_score = np.max(ai_scores)
-        min_ai_score = np.min(ai_scores)
+        # Advanced deepfake analysis
+        print("  Running advanced deepfake detection...")
+        advanced = self.analyze_advanced(frames)
 
-        # Weighted combination: frames (50%) + max frame (25%) + temporal (25%)
+        avg_ai_score = float(np.mean(ai_scores))
+        max_ai_score = float(np.max(ai_scores))
+        min_ai_score = float(np.min(ai_scores))
+
+        # Weighted combination:
+        # frames (40%) + max frame (15%) + temporal (20%) + advanced (25%)
+        adv_score = advanced.get("combined_ai_probability", 0)
         combined_score = (
-            0.50 * avg_ai_score
-            + 0.25 * max_ai_score
-            + 0.25 * (temporal["temporal_score"] * 100)
+            0.40 * avg_ai_score
+            + 0.15 * max_ai_score
+            + 0.20 * (temporal["temporal_score"] * 100)
+            + 0.25 * (adv_score * 100)
         )
 
         verdict = "AI-Generated" if combined_score > 42.0 else "Real/Authentic"
         confidence = combined_score if combined_score > 42.0 else (100.0 - combined_score)
+
+        explanation = self._generate_video_explanation(
+            verdict, combined_score, avg_ai_score, temporal, advanced,
+        )
 
         return {
             "verdict": verdict,
             "confidence": round(confidence, 1),
             "ai_probability": round(combined_score, 1),
             "detection_mode": self.detector.ml_mode and "ml_ensemble" or "heuristic_only",
+            "explanation": explanation,
             "video_info": video_info,
             "frame_analysis": {
                 "average_ai_score": round(avg_ai_score, 1),
@@ -192,6 +319,12 @@ class VideoProcessor:
                 "temporal_ai_score": round(temporal["temporal_score"] * 100, 1),
                 "flow_consistency": temporal.get("flow_consistency", 0),
                 "noise_consistency": temporal.get("noise_consistency", 0),
+            },
+            "advanced_analysis": {
+                "physiological": advanced.get("physiological", {}),
+                "identity_consistency": advanced.get("identity_consistency", {}),
+                "bg_fg_coherence": advanced.get("bg_fg_coherence", {}),
+                "combined_score": round(adv_score * 100, 1),
             },
         }
 

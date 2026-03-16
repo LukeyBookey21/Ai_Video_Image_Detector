@@ -1,14 +1,15 @@
 """
 AI Image & Video Detection API
-FastAPI backend with ensemble ML detection.
+FastAPI backend with multi-signal ensemble ML detection.
 """
 
 import os
 import tempfile
 import time
 from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -16,6 +17,7 @@ import io
 
 from detector import detector as ai_detector
 from video_processor import get_video_processor
+from heatmap import generate_heatmap
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"}
 ALLOWED_VIDEO_TYPES = {"video/mp4", "video/avi", "video/quicktime", "video/x-msvideo", "video/webm"}
@@ -24,16 +26,16 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Pre-loading detection model...")
+    print("Pre-loading detection models...")
     ai_detector.load_model()
-    print("Model ready.")
+    print("Ready — all analyzers active.")
     yield
 
 
 app = FastAPI(
     title="AI Image & Video Detector",
-    description="Detect AI-generated images and videos using ensemble ML models",
-    version="1.0.0",
+    description="Detect AI-generated images and videos using multi-signal ensemble analysis",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -50,16 +52,22 @@ app.add_middleware(
 async def health_check():
     return {
         "status": "ok",
+        "version": "2.0.0",
         "ml_model_loaded": ai_detector.ml_mode,
         "ml_models": ai_detector.ml_models_loaded,
         "detection_mode": "ml_ensemble" if ai_detector.ml_mode else "heuristic_only",
-        "analyzers": ["frequency", "statistical", "texture", "srm", "metadata"]
-            + (["ml_primary", "ml_deepfake"] if ai_detector.ml_mode else []),
+        "analyzers": [
+            "frequency", "statistical", "texture", "srm",
+            "color_space", "face", "metadata",
+        ] + (["ml_sdxl", "ml_deepfake"] if ai_detector.ml_mode else []),
     }
 
 
 @app.post("/api/detect/image")
-async def detect_image(file: UploadFile = File(...)):
+async def detect_image(
+    file: UploadFile = File(...),
+    heatmap: bool = Query(default=True, description="Generate artifact heatmap"),
+):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=400,
@@ -77,15 +85,29 @@ async def detect_image(file: UploadFile = File(...)):
 
     start_time = time.time()
     result = ai_detector.detect_image(image, raw_bytes=contents)
+
+    # Generate heatmap
+    heatmap_data = None
+    if heatmap:
+        try:
+            heatmap_data = generate_heatmap(image)
+        except Exception as e:
+            print(f"Heatmap generation error: {e}")
+
     elapsed = round(time.time() - start_time, 2)
 
-    return {
+    response = {
         "filename": file.filename,
         "file_type": "image",
         "file_size_mb": round(len(contents) / (1024 * 1024), 2),
         "processing_time_seconds": elapsed,
         **result,
     }
+
+    if heatmap_data:
+        response["heatmap"] = heatmap_data
+
+    return response
 
 
 @app.post("/api/detect/video")
@@ -100,7 +122,6 @@ async def detect_video(file: UploadFile = File(...)):
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 100MB.")
 
-    # Write to temp file for OpenCV
     suffix = os.path.splitext(file.filename or ".mp4")[1]
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
@@ -140,7 +161,7 @@ async def detect_auto(file: UploadFile = File(...)):
     else:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. Supported images: {', '.join(ALLOWED_IMAGE_TYPES)}. Supported videos: {', '.join(ALLOWED_VIDEO_TYPES)}",
+            detail=f"Unsupported file type: {file.content_type}",
         )
 
 

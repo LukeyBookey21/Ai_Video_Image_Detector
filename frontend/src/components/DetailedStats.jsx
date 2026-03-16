@@ -25,9 +25,9 @@ function StatSection({ title, icon, children }) {
 export default function DetailedStats({ result }) {
   const [expanded, setExpanded] = useState(false)
 
-  if (!result?.details) return null
+  if (!result?.details && !result?.advanced_analysis) return null
 
-  const d = result.details
+  const d = result.details || {}
 
   return (
     <div className="mt-4">
@@ -68,7 +68,7 @@ export default function DetailedStats({ result }) {
 
           {/* Texture Analysis */}
           {d.texture_analysis && (
-            <StatSection title="Texture & Edges" icon="▦">
+            <StatSection title="Texture & Edges" icon="*">
               <StatRow label="AI Score" value={d.texture_analysis.ai_score + '%'} />
               <StatRow label="Edge Density" value={d.texture_analysis.edge_density} warn={d.texture_analysis.edge_density < 0.05} />
               <StatRow label="Local Variance" value={d.texture_analysis.local_variance} warn={d.texture_analysis.local_variance < 200} />
@@ -77,10 +77,44 @@ export default function DetailedStats({ result }) {
 
           {/* SRM Analysis */}
           {d.srm_analysis && (
-            <StatSection title="SRM Noise Fingerprint" icon="*">
+            <StatSection title="SRM Noise Fingerprint" icon="$">
               <StatRow label="AI Score" value={d.srm_analysis.ai_score + '%'} />
               <StatRow label="Residual Std" value={d.srm_analysis.residual_std} warn={d.srm_analysis.residual_std < 2} />
               <StatRow label="Residual Kurtosis" value={d.srm_analysis.residual_kurtosis} warn={d.srm_analysis.residual_kurtosis > 10} />
+            </StatSection>
+          )}
+
+          {/* Color Space Analysis */}
+          {d.color_analysis && (
+            <StatSection title="Color Space (LAB/YCbCr)" icon="C">
+              <StatRow label="AI Score" value={d.color_analysis.ai_score + '%'} />
+              <StatRow label="Chroma Gradient" value={d.color_analysis.chroma_gradient} warn={d.color_analysis.chroma_gradient < 1.0} />
+              <StatRow label="Luma/Chroma Ratio" value={d.color_analysis.luma_chroma_ratio} warn={d.color_analysis.luma_chroma_ratio > 5} />
+              <StatRow label="CbCr Correlation" value={d.color_analysis.cbcr_correlation} warn={Math.abs(d.color_analysis.cbcr_correlation) > 0.8} />
+            </StatSection>
+          )}
+
+          {/* Face Analysis */}
+          {d.face_analysis && (
+            <StatSection title={`Face Analysis (${d.face_analysis.faces_found} found)`} icon="F">
+              <StatRow label="AI Score" value={d.face_analysis.ai_score + '%'} />
+              <StatRow label="Faces Found" value={d.face_analysis.faces_found} />
+              {d.face_analysis.face_details?.map((face, i) => (
+                <React.Fragment key={i}>
+                  {face.symmetry_diff != null && (
+                    <StatRow label={`Face ${i+1} Symmetry`} value={face.symmetry_diff} warn={face.symmetry_diff < 8} />
+                  )}
+                  {face.skin_noise != null && (
+                    <StatRow label={`Face ${i+1} Skin Noise`} value={face.skin_noise} warn={face.skin_noise < 3} />
+                  )}
+                  {face.boundary_gradient != null && (
+                    <StatRow label={`Face ${i+1} Boundary`} value={face.boundary_gradient} warn={face.boundary_gradient > 20} />
+                  )}
+                  {face.eyes_detected != null && (
+                    <StatRow label={`Face ${i+1} Eyes`} value={face.eyes_detected} warn={face.eyes_detected < 2} />
+                  )}
+                </React.Fragment>
+              ))}
             </StatSection>
           )}
 
@@ -132,6 +166,34 @@ export default function DetailedStats({ result }) {
               <StatRow label="Temporal AI Score" value={result.temporal_analysis.temporal_ai_score + '%'} warn={result.temporal_analysis.temporal_ai_score > 30} />
               <StatRow label="Optical Flow Var." value={result.temporal_analysis.flow_consistency} />
               <StatRow label="Noise Consistency" value={result.temporal_analysis.noise_consistency} warn={result.temporal_analysis.noise_consistency < 0.1} />
+            </StatSection>
+          )}
+
+          {/* Advanced Video Analysis */}
+          {result.advanced_analysis && (
+            <StatSection title="Advanced Deepfake Detection" icon="D">
+              <StatRow label="Combined Score" value={result.advanced_analysis.combined_score + '%'} warn={result.advanced_analysis.combined_score > 30} />
+              {result.advanced_analysis.physiological && (
+                <>
+                  <StatRow label="rPPG Signal Strength" value={result.advanced_analysis.physiological.signal_strength} warn={result.advanced_analysis.physiological.signal_strength < 0.3} />
+                  <StatRow label="Physio AI Prob." value={(result.advanced_analysis.physiological.ai_probability * 100).toFixed(1) + '%'} warn={result.advanced_analysis.physiological.ai_probability > 0.15} />
+                </>
+              )}
+              {result.advanced_analysis.identity_consistency && (
+                <>
+                  <StatRow label="Identity Score" value={result.advanced_analysis.identity_consistency.consistency_score} />
+                  <StatRow label="Identity AI Prob." value={(result.advanced_analysis.identity_consistency.ai_probability * 100).toFixed(1) + '%'} warn={result.advanced_analysis.identity_consistency.ai_probability > 0.15} />
+                  {result.advanced_analysis.identity_consistency.frames_with_faces != null && (
+                    <StatRow label="Frames w/ Faces" value={result.advanced_analysis.identity_consistency.frames_with_faces} />
+                  )}
+                </>
+              )}
+              {result.advanced_analysis.bg_fg_coherence && (
+                <>
+                  <StatRow label="BG/FG AI Prob." value={(result.advanced_analysis.bg_fg_coherence.ai_probability * 100).toFixed(1) + '%'} warn={result.advanced_analysis.bg_fg_coherence.ai_probability > 0.15} />
+                  <StatRow label="BG/FG Frames" value={result.advanced_analysis.bg_fg_coherence.frames_analyzed} />
+                </>
+              )}
             </StatSection>
           )}
         </div>
