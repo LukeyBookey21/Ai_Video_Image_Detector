@@ -102,10 +102,17 @@ async def detect_video(file: UploadFile = File(...)):
     try:
         start_time = time.time()
         processor = get_video_processor(ai_detector)
+        print(f"Analyzing video: {file.filename} ({len(contents) / 1024 / 1024:.1f} MB)")
         result = processor.analyze_video(tmp_path)
         elapsed = round(time.time() - start_time, 2)
-    finally:
+        print(f"Video analysis complete: {result.get('verdict')} ({elapsed}s)")
+    except Exception as e:
+        print(f"Video analysis error: {e}")
         os.unlink(tmp_path)
+        raise HTTPException(status_code=500, detail=f"Video analysis failed: {str(e)}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     return {
         "filename": file.filename,

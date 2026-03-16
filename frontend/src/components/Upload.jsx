@@ -44,20 +44,36 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
     formData.append('file', file)
 
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 120000) // 2 min timeout
+
       const response = await fetch('/api/detect', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       })
 
+      clearTimeout(timeout)
+
       if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.detail || 'Detection failed')
+        let detail = 'Detection failed'
+        try {
+          const err = await response.json()
+          detail = err.detail || detail
+        } catch {}
+        throw new Error(detail)
       }
 
       const result = await response.json()
       onResult(result)
     } catch (err) {
-      onError(err.message || 'Failed to analyze file. Is the backend running?')
+      if (err.name === 'AbortError') {
+        onError('Analysis timed out. Try a smaller file or shorter video.')
+      } else if (err.message === 'Failed to fetch') {
+        onError('Cannot connect to backend. Make sure the backend is running on localhost:8000')
+      } else {
+        onError(err.message || 'Failed to analyze file.')
+      }
     } finally {
       setIsLoading(false)
     }
