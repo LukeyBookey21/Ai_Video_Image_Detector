@@ -1,108 +1,129 @@
 # AI Image & Video Detector
 
-A web application that detects AI-generated images and videos using an ensemble of forensic analysis techniques. No external API keys or GPU required — runs entirely on CPU.
+Detect AI-generated images and deepfake videos using a multi-signal forensic ensemble. Analyses frequency patterns, noise fingerprints, facial anomalies, colour space forensics, and (optionally) ML models to produce a confidence score.
 
-## How It Works
-
-The detector combines three independent analysis methods and ensembles their results:
-
-| Method | Weight | What It Detects |
-|--------|--------|----------------|
-| **Frequency Analysis** (DCT + FFT) | 40% | Spectral artifacts, power law deviations, abnormal frequency distributions |
-| **Statistical Analysis** | 35% | Noise patterns, pixel distribution anomalies, color channel correlations |
-| **Texture Analysis** | 25% | Unnatural smoothness, edge density anomalies, gradient patterns |
-
-For **videos**, the system extracts evenly-spaced keyframes, analyzes each independently, and aggregates scores (60% average + 40% max) to catch partial deepfakes.
-
-## Quick Start
-
-### Backend
+## Quick Start (Development)
 
 ```bash
+# Backend
 cd backend
 pip install -r requirements.txt
 python main.py
-```
+# API runs at http://localhost:8000
 
-The API runs at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
-
-### Frontend
-
-```bash
+# Frontend (in a separate terminal)
 cd frontend
 npm install
 npm run dev
+# UI runs at http://localhost:3000
 ```
 
-The UI runs at `http://localhost:3000` and proxies API calls to the backend.
-
-### Run Tests
+## Docker Deployment
 
 ```bash
-cd backend
-python test_detector.py
+cp .env.example .env
+# Edit .env with your settings
+docker-compose up --build
+# Frontend: http://localhost:3000
+# Backend:  http://localhost:8000
 ```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FRONTEND_ORIGIN` | `http://localhost:3000` | Frontend URL for CORS |
+| `BACKEND_PORT` | `8000` | Backend port mapping |
+| `FRONTEND_PORT` | `3000` | Frontend port mapping |
+| `HIVE_API_KEY` | *(empty)* | Optional Hive Moderation API key for improved accuracy. Get one at thehive.ai |
+
+## Detection Signals
+
+The ensemble combines 9+ independent signals:
+
+| Signal | Description |
+|--------|-------------|
+| ML Models (ViT) | SDXL detector + deepfake detector via HuggingFace (optional) |
+| Hive API | External AI detection service (optional, requires API key) |
+| Frequency (DCT+FFT) | Spectral artifacts and power law deviations |
+| Statistical | Noise patterns, pixel distributions, colour correlations |
+| Texture | Edge density, local variance, gradient patterns |
+| SRM | Steganalysis rich model noise fingerprinting |
+| Colour Space | LAB/YCbCr forensics, chroma gradient analysis |
+| Face Analysis | Symmetry, skin texture, boundary artifacts |
+| Metadata | EXIF data, compression artifacts, format anomalies |
+
+For **videos**: analyses 15 keyframes individually plus temporal consistency (optical flow, noise, flicker).
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health` | GET | Health check |
-| `/api/detect` | POST | Auto-detect file type and analyze |
-| `/api/detect/image` | POST | Analyze an image |
-| `/api/detect/video` | POST | Analyze a video |
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/health` | GET | None | Health check and model status |
+| `/api/detect` | POST | None | Auto-detect file type and analyse |
+| `/api/detect/image` | POST | None | Analyse an image |
+| `/api/detect/video` | POST | None | Analyse a video |
+| `/api/detect-url` | POST | None | Download and analyse from URL |
+| `/api/stats` | GET | None | Analysis counters |
+| `/api/waitlist` | POST | None | Join email waitlist |
+| `/api/v1/detect` | POST | API Key | Developer API (X-API-Key header) |
+| `/api/v1/usage` | GET | API Key | API key usage stats |
+| `/api/docs` | GET | None | Developer API documentation |
 
-Upload a file as multipart form data with field name `file`.
+### Rate Limits
+
+- Web endpoints: 10 requests/hour per IP
+- Developer API: 100 requests/day per API key
+- Waitlist: 3 requests/hour per IP
+
+### Generate an API Key
+
+```bash
+python scripts/generate_api_key.py --name "My App"
+```
 
 ### Example
 
 ```bash
-curl -X POST http://localhost:8000/api/detect/image \
-  -F "file=@photo.jpg"
-```
-
-### Response
-
-```json
-{
-  "filename": "photo.jpg",
-  "file_type": "image",
-  "verdict": "AI-Generated",
-  "confidence": 72.5,
-  "ai_probability": 72.5,
-  "details": {
-    "frequency_analysis": { "ai_score": 65.0, "spectral_flatness": 0.82, "power_law_slope": -0.45 },
-    "statistical_analysis": { "ai_score": 75.0, "noise_level": 2.1, "color_correlation": 0.91 },
-    "texture_analysis": { "ai_score": 80.0, "edge_density": 0.02, "local_variance": 85.3 }
-  }
-}
+curl -X POST http://localhost:8000/api/detect/image -F "file=@photo.jpg"
 ```
 
 ## Supported Formats
 
 - **Images**: JPEG, PNG, WebP, BMP, TIFF
 - **Videos**: MP4, AVI, MOV, WebM
-- **Max file size**: 100MB
+- **Max file size**: 50 MB
+
+## Benchmarking
+
+```bash
+python scripts/download_test_data.py
+python scripts/benchmark.py test_data/real test_data/ai_generated
+python scripts/calibrate_threshold.py
+```
+
+See [BENCHMARK.md](BENCHMARK.md) for latest results.
 
 ## Tech Stack
 
-- **Backend**: Python, FastAPI, NumPy, SciPy, OpenCV, Pillow
-- **Frontend**: React, Vite, Tailwind CSS
-- **Detection**: DCT/FFT frequency analysis, statistical forensics, texture analysis
+- **Backend**: Python, FastAPI, NumPy, SciPy, OpenCV, Pillow, slowapi
+- **Frontend**: React, Vite, Tailwind CSS, React Router, html2canvas
+- **ML** (optional): PyTorch, HuggingFace Transformers
 
-## Limitations
+## Accuracy Disclaimer
 
-- This is a forensic heuristic approach, not a trained ML classifier. Accuracy is lower than commercial tools that use fine-tuned neural networks.
-- Works best on uncompressed or lightly compressed images. Heavy JPEG compression destroys forensic artifacts.
-- Detection of the latest AI generators (which constantly improve) may be less reliable.
-- For highest accuracy, consider integrating a HuggingFace model (e.g., `Organika/sdxl-detector`) — the codebase is designed to support this as a drop-in upgrade.
+This tool provides forensic analysis to help assess whether content may be AI-generated. **No detection tool is 100% accurate.** Results should be treated as a guide, not a definitive verdict. The tool works best on:
 
-## Upgrading to ML Models
+- AI-generated images from diffusion models (Stable Diffusion, DALL-E, Midjourney)
+- Deepfake face-swap videos
+- Uncompressed or lightly compressed content
 
-The architecture supports swapping in pre-trained HuggingFace models. To enable:
+Heavy social media compression, screenshots, and screen recordings reduce accuracy.
 
-1. Install `torch` and `transformers`
-2. Modify `detector.py` to add a `ViTDetector` class using `pipeline("image-classification", model="Organika/sdxl-detector")`
-3. Add it to the ensemble with appropriate weighting
+## Privacy
 
-This gives ~94% accuracy on modern AI-generated images vs the current heuristic approach.
+- Uploaded files are analysed in memory and deleted immediately
+- URL downloads are saved to temporary files and deleted after analysis
+- No uploaded content is stored, logged, or used for any purpose
+- Email waitlist entries are stored locally in CSV format
+- Analysis counters are stored locally with no personal data

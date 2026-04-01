@@ -84,8 +84,7 @@ def _analyze_patch(patch: Image.Image) -> float:
         score += 0.12
 
     # 3. Noise level
-    blurred = np.array(patch.convert("L").resize((32, 32)).filter(
-        ImageFilter.GaussianBlur(radius=1)), dtype=np.float64)
+    blurred = np.array(patch.convert("L").resize((32, 32)).filter(ImageFilter.GaussianBlur(radius=1)), dtype=np.float64)
     noise_std = np.std(arr - blurred)
     if noise_std < 1.5:
         score += 0.25
@@ -101,8 +100,7 @@ def _analyze_patch(patch: Image.Image) -> float:
     return min(score, 1.0)
 
 
-def _render_heatmap(image: Image.Image, grid: list, grid_size: int,
-                    patch_w: int, patch_h: int) -> str:
+def _render_heatmap(image: Image.Image, grid: list, grid_size: int, patch_w: int, patch_h: int) -> str:
     """Render a colored heatmap overlay and return as base64 PNG."""
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)

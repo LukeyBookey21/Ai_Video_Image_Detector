@@ -25,3 +25,11 @@ Thumbs.db
 # Models (large files)
 backend/models/*.pth
 backend/models/*.bin
+
+# Data files (generated at runtime)
+backend/data/
+test_data/
+benchmark_results.json
+
+# Lock files
+*.lock

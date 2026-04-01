@@ -35,8 +35,8 @@ def rgb_to_lab(img_array):
     def f(t):
         mask = t > 0.008856
         result = np.zeros_like(t)
-        result[mask] = t[mask] ** (1/3)
-        result[~mask] = 7.787 * t[~mask] + 16/116
+        result[mask] = t[mask] ** (1 / 3)
+        result[~mask] = 7.787 * t[~mask] + 16 / 116
         return result
 
     L = 116 * f(y) - 16
@@ -76,8 +76,13 @@ class ColorSpaceAnalyzer:
             scores.append(0.12)
 
         # L channel noise vs chrominance noise ratio
-        L_noise = np.std(L - np.array(Image.fromarray(L.astype(np.uint8)).filter(
-            __import__('PIL').ImageFilter.GaussianBlur(radius=2)), dtype=np.float64))
+        L_noise = np.std(
+            L
+            - np.array(
+                Image.fromarray(L.astype(np.uint8)).filter(__import__("PIL").ImageFilter.GaussianBlur(radius=2)),
+                dtype=np.float64,
+            )
+        )
         a_noise = np.std(a[1:, :] - a[:-1, :])
         b_noise = np.std(b[1:, :] - b[:-1, :])
 
@@ -112,7 +117,7 @@ class ColorSpaceAnalyzer:
 
         # ── Color quantization artifacts ──
         # AI images sometimes show subtle quantization patterns
-        for ch_name, ch_data in [("R", img[:,:,0]), ("G", img[:,:,1]), ("B", img[:,:,2])]:
+        for ch_name, ch_data in [("R", img[:, :, 0]), ("G", img[:, :, 1]), ("B", img[:, :, 2])]:
             hist, _ = np.histogram(ch_data.flatten(), bins=256, range=(0, 255))
             # Check for periodic gaps in histogram (quantization)
             zero_bins = np.sum(hist == 0)

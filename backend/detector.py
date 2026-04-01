@@ -15,6 +15,8 @@ Ensemble scoring with calibrated confidence weighting.
 """
 
 import io
+import logging
+import os
 import struct
 import numpy as np
 from PIL import Image, ImageFilter
@@ -27,6 +29,7 @@ from scipy.ndimage import uniform_filter, convolve
 _HAS_ML = False
 try:
     from transformers import pipeline as hf_pipeline
+
     _HAS_ML = True
 except ImportError:
     pass
@@ -34,37 +37,52 @@ except ImportError:
 
 # ─── SRM Filters (Steganalysis Rich Model) ───────────────────────────────────
 
-SRM_FILTER_1 = np.array([
-    [0,  0,  0,  0,  0],
-    [0,  0,  0,  0,  0],
-    [0,  1, -2,  1,  0],
-    [0,  0,  0,  0,  0],
-    [0,  0,  0,  0,  0],
-], dtype=np.float64)
+SRM_FILTER_1 = np.array(
+    [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 1, -2, 1, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+    ],
+    dtype=np.float64,
+)
 
-SRM_FILTER_2 = np.array([
-    [0,  0,  0,  0,  0],
-    [0,  0,  1,  0,  0],
-    [0,  0, -2,  0,  0],
-    [0,  0,  1,  0,  0],
-    [0,  0,  0,  0,  0],
-], dtype=np.float64)
+SRM_FILTER_2 = np.array(
+    [
+        [0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, -2, 0, 0],
+        [0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0],
+    ],
+    dtype=np.float64,
+)
 
-SRM_FILTER_3 = np.array([
-    [0,  0,  0,  0,  0],
-    [0,  0,  0,  0,  0],
-    [0,  0, -1,  1,  0],
-    [0,  0,  0,  0,  0],
-    [0,  0,  0,  0,  0],
-], dtype=np.float64)
+SRM_FILTER_3 = np.array(
+    [
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, -1, 1, 0],
+        [0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0],
+    ],
+    dtype=np.float64,
+)
 
-SRM_FILTER_EDGE = np.array([
-    [-1, 2, -2, 2, -1],
-    [ 2,-6,  8,-6,  2],
-    [-2, 8,-12, 8, -2],
-    [ 2,-6,  8,-6,  2],
-    [-1, 2, -2, 2, -1],
-], dtype=np.float64) / 12.0
+SRM_FILTER_EDGE = (
+    np.array(
+        [
+            [-1, 2, -2, 2, -1],
+            [2, -6, 8, -6, 2],
+            [-2, 8, -12, 8, -2],
+            [2, -6, 8, -6, 2],
+            [-1, 2, -2, 2, -1],
+        ],
+        dtype=np.float64,
+    )
+    / 12.0
+)
 
 
 class ViTDetector:
@@ -137,8 +155,8 @@ class FrequencyAnalyzer:
         h, w = magnitude.shape
         q = h // 4
         low = magnitude[:q, :q]
-        mid = magnitude[q:2*q, q:2*q]
-        high = magnitude[2*q:, 2*q:]
+        mid = magnitude[q : 2 * q, q : 2 * q]
+        high = magnitude[2 * q :, 2 * q :]
 
         low_e = np.mean(low)
         mid_e = np.mean(mid)
@@ -162,7 +180,7 @@ class FrequencyAnalyzer:
 
         cy, cx = h // 2, w // 2
         Y, X = np.ogrid[:h, :w]
-        r = np.sqrt((X - cx)**2 + (Y - cy)**2).astype(int)
+        r = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2).astype(int)
         max_r = min(cy, cx)
         radial = np.zeros(max_r)
         for i in range(max_r):
@@ -189,10 +207,12 @@ class FrequencyAnalyzer:
             block_interior_energy = 0
             for y in range(0, h - bsize, bsize):
                 for x in range(0, w - bsize, bsize):
-                    block = img_gray[y:y+bsize, x:x+bsize]
+                    block = img_gray[y : y + bsize, x : x + bsize]
                     # Edge energy at block boundaries
                     if y > 0:
-                        block_boundary_energy += np.mean(np.abs(img_gray[y, x:x+bsize] - img_gray[y-1, x:x+bsize]))
+                        block_boundary_energy += np.mean(
+                            np.abs(img_gray[y, x : x + bsize] - img_gray[y - 1, x : x + bsize])
+                        )
                     block_interior_energy += np.mean(np.abs(np.diff(block, axis=0)))
             ratio = block_boundary_energy / (block_interior_energy + 1e-10)
             block_scores.append(ratio)
@@ -378,7 +398,7 @@ class TextureAnalyzer:
             variances.append(np.mean(lv))
 
         avg_local_var = variances[1]  # size=8
-        var_of_var = np.var(np.maximum(uniform_filter(img_gray**2, size=8) - uniform_filter(img_gray, size=8)**2, 0))
+        var_of_var = np.var(np.maximum(uniform_filter(img_gray**2, size=8) - uniform_filter(img_gray, size=8) ** 2, 0))
 
         # Variance ratio across scales (AI is more scale-invariant)
         var_ratio = variances[0] / (variances[2] + 1e-10)
@@ -465,7 +485,7 @@ class SRMAnalyzer:
 
         residuals = []
         for filt in [SRM_FILTER_1, SRM_FILTER_2, SRM_FILTER_3, SRM_FILTER_EDGE]:
-            res = convolve(img_gray, filt, mode='reflect')
+            res = convolve(img_gray, filt, mode="reflect")
             residuals.append(res)
 
         scores = []
@@ -559,8 +579,16 @@ class MetadataAnalyzer:
         # Known AI software tags
         if has_software:
             sw = exif_data.get("Software", "").lower()
-            ai_keywords = ["stable diffusion", "midjourney", "dall-e", "comfyui",
-                          "automatic1111", "novelai", "nai", "diffusion"]
+            ai_keywords = [
+                "stable diffusion",
+                "midjourney",
+                "dall-e",
+                "comfyui",
+                "automatic1111",
+                "novelai",
+                "nai",
+                "diffusion",
+            ]
             if any(kw in sw for kw in ai_keywords):
                 scores.append(0.50)
                 metadata_flags.append(f"ai_software:{exif_data['Software']}")
@@ -570,9 +598,19 @@ class MetadataAnalyzer:
 
         # Perfect power-of-2 or common AI dimensions
         ai_dimensions = [
-            (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
-            (512, 768), (768, 512), (1024, 768), (768, 1024),
-            (1024, 1792), (1792, 1024), (1344, 768), (768, 1344),
+            (512, 512),
+            (768, 768),
+            (1024, 1024),
+            (1536, 1536),
+            (2048, 2048),
+            (512, 768),
+            (768, 512),
+            (1024, 768),
+            (768, 1024),
+            (1024, 1792),
+            (1792, 1024),
+            (1344, 768),
+            (768, 1344),
         ]
         if (w, h) in ai_dimensions:
             scores.append(0.12)
@@ -617,6 +655,7 @@ class AIImageDetector:
         # Advanced analyzers
         from color_analysis import ColorSpaceAnalyzer
         from face_analysis import FaceAnalyzer
+
         self.color_analyzer = ColorSpaceAnalyzer()
         self.face_analyzer = FaceAnalyzer()
 
@@ -663,6 +702,31 @@ class AIImageDetector:
                 result[k] = self._sanitize(v)
         return result
 
+    def _call_hive_api(self, raw_bytes: bytes) -> float | None:
+        """Call Hive Moderation API for AI-generated image detection. Returns score or None."""
+        hive_key = os.environ.get("HIVE_API_KEY", "")
+        if not hive_key:
+            logging.debug("HIVE_API_KEY not set — skipping Hive signal")
+            return None
+        try:
+            import requests
+
+            resp = requests.post(
+                "https://api.thehive.ai/api/v2/task/sync",
+                headers={"Authorization": f"Token {hive_key}"},
+                files={"media": ("image.jpg", io.BytesIO(raw_bytes), "image/jpeg")},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            for output in data.get("status", [{}])[0].get("response", {}).get("output", []):
+                for cls in output.get("classes", []):
+                    if cls.get("class") == "ai_generated":
+                        return float(cls["score"])
+        except Exception as e:
+            logging.warning(f"Hive API error (continuing without it): {e}")
+        return None
+
     def detect_image(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
         image_rgb = image.convert("RGB")
 
@@ -679,17 +743,22 @@ class AIImageDetector:
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
         vit2_score = self.vit_deepfake.predict(image_rgb) if self.ml_mode else None
 
+        # Optional Hive API signal
+        hive_score = self._call_hive_api(raw_bytes) if raw_bytes else None
+
         # ── Ensemble Scoring ──
         has_faces = face.get("faces_found", 0) > 0
         face_weight = 0.08 if has_faces else 0.0
+        hive_weight = 0.30 if hive_score is not None else 0.0
 
         if vit1_score is not None or vit2_score is not None:
             ml_scores = [s for s in [vit1_score, vit2_score] if s is not None]
             ml_avg = np.mean(ml_scores)
 
-            remaining = 1.0 - 0.40 - face_weight
+            ml_w = 0.40 * (1.0 - hive_weight)
+            remaining = 1.0 - ml_w - face_weight - hive_weight
             weights = {
-                "ml_models": 0.40,
+                "ml_models": ml_w,
                 "frequency": remaining * 0.22,
                 "statistical": remaining * 0.20,
                 "texture": remaining * 0.16,
@@ -699,6 +768,8 @@ class AIImageDetector:
             }
             if has_faces:
                 weights["face"] = face_weight
+            if hive_score is not None:
+                weights["hive"] = hive_weight
 
             ensemble_score = (
                 weights["ml_models"] * ml_avg
@@ -709,10 +780,11 @@ class AIImageDetector:
                 + weights["color"] * color["ai_probability"]
                 + weights["metadata"] * meta["ai_probability"]
                 + (weights.get("face", 0) * face.get("ai_probability", 0))
+                + (weights.get("hive", 0) * (hive_score or 0))
             )
             mode = "ml_ensemble"
         else:
-            remaining = 1.0 - face_weight
+            remaining = 1.0 - face_weight - hive_weight
             weights = {
                 "frequency": remaining * 0.22,
                 "statistical": remaining * 0.20,
@@ -723,6 +795,8 @@ class AIImageDetector:
             }
             if has_faces:
                 weights["face"] = face_weight
+            if hive_score is not None:
+                weights["hive"] = hive_weight
 
             ensemble_score = (
                 weights["frequency"] * freq["ai_probability"]
@@ -732,12 +806,16 @@ class AIImageDetector:
                 + weights["color"] * color["ai_probability"]
                 + weights["metadata"] * meta["ai_probability"]
                 + (weights.get("face", 0) * face.get("ai_probability", 0))
+                + (weights.get("hive", 0) * (hive_score or 0))
             )
             mode = "heuristic_only"
 
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
-        verdict = "AI-Generated" if ensemble_score > 0.42 else "Real/Authentic"
-        confidence = ensemble_score if ensemble_score > 0.42 else (1.0 - ensemble_score)
+        # Detection threshold calibrated from benchmark results — see BENCHMARK.md
+        # Optimal F1 threshold: 0.35 (from scripts/calibrate_threshold.py)
+        detection_threshold = 0.35
+        verdict = "AI-Generated" if ensemble_score > detection_threshold else "Real/Authentic"
+        confidence = ensemble_score if ensemble_score > detection_threshold else (1.0 - ensemble_score)
 
         details = {
             "frequency_analysis": {
@@ -792,11 +870,26 @@ class AIImageDetector:
                 "ai_score": round(vit2_score * 100, 1),
                 "model": self.vit_deepfake.model_name,
             }
+        if hive_score is not None:
+            details["hive_api"] = {
+                "ai_score": round(hive_score * 100, 1),
+                "source": "Hive Moderation API",
+            }
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
-            verdict, ensemble_score, freq, stat, texture, srm, meta,
-            color, face, vit1_score, vit2_score, mode,
+            verdict,
+            ensemble_score,
+            freq,
+            stat,
+            texture,
+            srm,
+            meta,
+            color,
+            face,
+            vit1_score,
+            vit2_score,
+            mode,
         )
 
         return {
@@ -808,15 +901,16 @@ class AIImageDetector:
             "details": details,
         }
 
-    def _generate_explanation(self, verdict, score, freq, stat, texture, srm, meta,
-                              color, face, vit1, vit2, mode):
+    def _generate_explanation(self, verdict, score, freq, stat, texture, srm, meta, color, face, vit1, vit2, mode):
         """Generate a human-readable explanation of what triggered the detection."""
         reasons = []
         mitigating = []
 
         # Collect strong signals
         if vit1 is not None and vit1 > 0.6:
-            reasons.append(f"The ML model (SDXL detector) identified this as AI-generated with {vit1*100:.0f}% confidence")
+            reasons.append(
+                f"The ML model (SDXL detector) identified this as AI-generated with {vit1*100:.0f}% confidence"
+            )
         if vit2 is not None and vit2 > 0.6:
             reasons.append(f"The deepfake detector flagged this with {vit2*100:.0f}% confidence")
 

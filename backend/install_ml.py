@@ -37,6 +37,7 @@ def main():
 
     try:
         from transformers import pipeline
+
         pipe = pipeline("image-classification", model="Organika/sdxl-detector", device=-1)
         print("\nModel downloaded and verified!")
     except Exception as e:

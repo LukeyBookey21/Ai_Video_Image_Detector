@@ -31,7 +31,7 @@ class PhysiologicalAnalyzer:
             img = np.array(frame.convert("RGB"))
             h, w = img.shape[:2]
             # Focus on forehead/cheek region (skin-heavy area)
-            skin_region = img[h//4:h//2, w//4:3*w//4, 1]  # Green channel
+            skin_region = img[h // 4 : h // 2, w // 4 : 3 * w // 4, 1]  # Green channel
             green_signal.append(np.mean(skin_region))
 
         green_signal = np.array(green_signal, dtype=np.float64)
@@ -82,12 +82,8 @@ class IdentityConsistencyAnalyzer:
     """
 
     def __init__(self):
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        self.eye_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_eye.xml'
-        )
+        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 
     def analyze_frames(self, frames: list) -> dict:
         """Check face geometry consistency across frames."""
@@ -105,7 +101,7 @@ class IdentityConsistencyAnalyzer:
             face = max(faces, key=lambda f: f[2] * f[3])
             x, y, w, h = face
 
-            face_roi = gray[y:y+h, x:x+w]
+            face_roi = gray[y : y + h, x : x + w]
             eyes = self.eye_cascade.detectMultiScale(face_roi, 1.1, 3)
 
             if len(eyes) >= 2:
@@ -114,15 +110,17 @@ class IdentityConsistencyAnalyzer:
                 e1, e2 = eyes_sorted[0], eyes_sorted[1]
 
                 # Normalized measurements (relative to face width)
-                eye_dist = abs((e1[0] + e1[2]/2) - (e2[0] + e2[2]/2)) / w
-                eye_y_diff = abs((e1[1] + e1[3]/2) - (e2[1] + e2[3]/2)) / h
+                eye_dist = abs((e1[0] + e1[2] / 2) - (e2[0] + e2[2] / 2)) / w
+                eye_y_diff = abs((e1[1] + e1[3] / 2) - (e2[1] + e2[3] / 2)) / h
                 face_aspect = w / (h + 1e-10)
 
-                measurements.append({
-                    "eye_distance": eye_dist,
-                    "eye_y_diff": eye_y_diff,
-                    "face_aspect": face_aspect,
-                })
+                measurements.append(
+                    {
+                        "eye_distance": eye_dist,
+                        "eye_y_diff": eye_y_diff,
+                        "face_aspect": face_aspect,
+                    }
+                )
 
         if len(measurements) < 3:
             return {
@@ -172,9 +170,7 @@ class BackgroundForegroundAnalyzer:
         img_cv = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY).astype(np.float64)
 
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         faces = face_cascade.detectMultiScale(gray.astype(np.uint8), 1.1, 5, minSize=(60, 60))
 
         if len(faces) == 0:
@@ -184,9 +180,9 @@ class BackgroundForegroundAnalyzer:
         x, y, w, h = face
 
         # Extract face and background regions
-        face_region = gray[y:y+h, x:x+w]
+        face_region = gray[y : y + h, x : x + w]
         mask = np.ones_like(gray, dtype=bool)
-        mask[y:y+h, x:x+w] = False
+        mask[y : y + h, x : x + w] = False
         bg_region = gray[mask]
 
         # Compare noise levels
@@ -195,11 +191,11 @@ class BackgroundForegroundAnalyzer:
 
         # Sample background
         bg_gray_2d = gray.copy()
-        bg_gray_2d[y:y+h, x:x+w] = np.nan
+        bg_gray_2d[y : y + h, x : x + w] = np.nan
         bg_valid = bg_gray_2d[~np.isnan(bg_gray_2d)]
         if len(bg_valid) > 100:
-            bg_sample = bg_valid[:face_region.size] if len(bg_valid) > face_region.size else bg_valid
-            bg_reshaped = bg_sample[:len(bg_sample)//2*2].reshape(-1, 2)
+            bg_sample = bg_valid[: face_region.size] if len(bg_valid) > face_region.size else bg_valid
+            bg_reshaped = bg_sample[: len(bg_sample) // 2 * 2].reshape(-1, 2)
             bg_noise = np.std(np.diff(bg_reshaped, axis=1))
         else:
             bg_noise = face_noise

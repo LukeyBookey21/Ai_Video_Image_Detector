@@ -59,13 +59,17 @@ class VideoProcessor:
                 frames.append(pil_image)
 
         cap.release()
-        return frames, raw_frames, {
-            "total_frames": total_frames,
-            "fps": round(fps, 2),
-            "duration_seconds": round(duration, 2),
-            "resolution": f"{width}x{height}",
-            "frames_analyzed": len(frames),
-        }
+        return (
+            frames,
+            raw_frames,
+            {
+                "total_frames": total_frames,
+                "fps": round(fps, 2),
+                "duration_seconds": round(duration, 2),
+                "resolution": f"{width}x{height}",
+                "frames_analyzed": len(frames),
+            },
+        )
 
     def analyze_temporal_consistency(self, raw_frames: list) -> dict:
         """Analyze frame-to-frame consistency. AI videos have different temporal patterns."""
@@ -91,11 +95,18 @@ class VideoProcessor:
                 next_gray = cv2.resize(next_gray, (new_w, new_h))
 
             flow = cv2.calcOpticalFlowFarneback(
-                prev_gray, next_gray, None,
-                pyr_scale=0.5, levels=3, winsize=15,
-                iterations=3, poly_n=5, poly_sigma=1.2, flags=0,
+                prev_gray,
+                next_gray,
+                None,
+                pyr_scale=0.5,
+                levels=3,
+                winsize=15,
+                iterations=3,
+                poly_n=5,
+                poly_sigma=1.2,
+                flags=0,
             )
-            mag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+            mag = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
             flow_magnitudes.append(np.mean(mag))
 
         if flow_magnitudes:
@@ -197,8 +208,7 @@ class VideoProcessor:
 
         return advanced
 
-    def _generate_video_explanation(self, verdict, combined_score, avg_ai_score,
-                                     temporal, advanced) -> str:
+    def _generate_video_explanation(self, verdict, combined_score, avg_ai_score, temporal, advanced) -> str:
         """Generate human-readable explanation for video analysis."""
         reasons = []
         mitigating = []
@@ -224,7 +234,9 @@ class VideoProcessor:
         if advanced:
             physio = advanced.get("physiological", {})
             if physio.get("ai_probability", 0) > 0.15:
-                reasons.append("No physiological signals (rPPG blood flow) detected in faces — real humans show subtle skin color changes from heartbeat")
+                reasons.append(
+                    "No physiological signals (rPPG blood flow) detected in faces — real humans show subtle skin color changes from heartbeat"
+                )
 
             identity = advanced.get("identity_consistency", {})
             if identity.get("ai_probability", 0) > 0.15:
@@ -232,7 +244,9 @@ class VideoProcessor:
 
             bg_fg = advanced.get("bg_fg_coherence", {})
             if bg_fg.get("ai_probability", 0) > 0.15:
-                reasons.append("Noise/compression mismatch between face and background regions — suggests face was generated separately")
+                reasons.append(
+                    "Noise/compression mismatch between face and background regions — suggests face was generated separately"
+                )
 
         # Mitigating
         if avg_ai_score < 30:
@@ -243,7 +257,9 @@ class VideoProcessor:
         if verdict == "AI-Generated":
             if reasons:
                 return "Key giveaways: " + ". ".join(reasons[:4]) + "."
-            return "Multiple subtle signals across frame analysis and temporal consistency suggest this is AI-generated."
+            return (
+                "Multiple subtle signals across frame analysis and temporal consistency suggest this is AI-generated."
+            )
         else:
             summary = "This appears authentic."
             if mitigating:
@@ -267,11 +283,13 @@ class VideoProcessor:
         ai_scores = []
         for i, frame in enumerate(frames):
             result = self.detector.detect_image(frame)
-            frame_results.append({
-                "frame_index": i,
-                "ai_probability": result["ai_probability"],
-                "verdict": result["verdict"],
-            })
+            frame_results.append(
+                {
+                    "frame_index": i,
+                    "ai_probability": result["ai_probability"],
+                    "verdict": result["verdict"],
+                }
+            )
             ai_scores.append(result["ai_probability"])
 
         # Temporal consistency analysis
@@ -299,7 +317,11 @@ class VideoProcessor:
         confidence = combined_score if combined_score > 42.0 else (100.0 - combined_score)
 
         explanation = self._generate_video_explanation(
-            verdict, combined_score, avg_ai_score, temporal, advanced,
+            verdict,
+            combined_score,
+            avg_ai_score,
+            temporal,
+            advanced,
         )
 
         return {

@@ -21,7 +21,7 @@ export default function Header() {
             AI
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">AI Detector</h1>
+            <h1 className="text-lg sm:text-xl font-bold text-white">AI Detector</h1>
             <p className="text-xs text-gray-400">Image & Video Analysis</p>
           </div>
         </div>

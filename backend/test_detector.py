@@ -112,7 +112,7 @@ def test_image(name, image, expected=None):
     print(f"  Texture:        {d['texture_analysis']['ai_score']}%")
     print(f"  SRM:            {d['srm_analysis']['ai_score']}%")
     print(f"  Metadata:       {d['metadata_analysis']['ai_score']}%")
-    if d['metadata_analysis'].get('flags'):
+    if d["metadata_analysis"].get("flags"):
         print(f"  Meta Flags:     {', '.join(d['metadata_analysis']['flags'])}")
     print(f"  Time:           {elapsed:.3f}s")
     return result

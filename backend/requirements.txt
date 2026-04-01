@@ -6,6 +6,9 @@ numpy>=2.0.0
 scipy>=1.14.0
 opencv-python-headless>=4.10.0
 aiofiles>=24.1.0
+slowapi>=0.1.9
+requests>=2.31.0
+filelock>=3.12.0
 
 # ML model support (optional but recommended for best accuracy)
 # Uncomment the lines below to enable the pre-trained ViT detector:

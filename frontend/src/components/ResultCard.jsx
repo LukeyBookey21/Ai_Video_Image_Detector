@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import DetailedStats from './DetailedStats'
 
 function getConfidencePhrase(confidence, isAI) {
@@ -42,32 +42,66 @@ function DetailChip({ label, value }) {
 
 export default function ResultCard({ result }) {
   const [showDetails, setShowDetails] = useState(false)
+  const [copyLabel, setCopyLabel] = useState('Copy result')
+  const verdictRef = useRef(null)
 
   if (!result) return null
 
-  const isAI = result.verdict === 'AI-Generated'
   const confidence = result.confidence || 0
+  const isAI = result.verdict === 'AI-Generated'
+  const isUncertain = confidence < 40
   const d = result.details || {}
+  const confidencePhrase = getConfidencePhrase(confidence, isAI)
+
+  const handleCopy = async () => {
+    const text = `AI Detector result: ${result.verdict} \u2014 ${confidencePhrase}. Checked at ${new Date().toLocaleDateString()}. Verify suspicious content at actionfraud.police.uk`
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopyLabel('Copied!')
+      setTimeout(() => setCopyLabel('Copy result'), 2000)
+    } catch {}
+  }
+
+  const handleDownload = async () => {
+    if (!verdictRef.current) return
+    const html2canvas = (await import('html2canvas')).default
+    const canvas = await html2canvas(verdictRef.current, { backgroundColor: '#030712', scale: 2 })
+    const link = document.createElement('a')
+    link.download = `ai-detector-${isAI ? 'ai-generated' : 'authentic'}-${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
 
   return (
     <div className="space-y-4">
       {/* ============================================ */}
       {/* LAYER 1 — THE VERDICT (always visible)       */}
       {/* ============================================ */}
-      <div className={`rounded-2xl overflow-hidden border ${
-        isAI ? 'border-red-500/50 shadow-lg shadow-red-500/10' : 'border-green-500/50 shadow-lg shadow-green-500/10'
+      <div ref={verdictRef} className={`rounded-2xl overflow-hidden border ${
+        isUncertain ? 'border-yellow-500/50 shadow-lg shadow-yellow-500/10' : isAI ? 'border-red-500/50 shadow-lg shadow-red-500/10' : 'border-green-500/50 shadow-lg shadow-green-500/10'
       }`}>
         {/* Verdict Banner */}
         <div className={`px-6 py-8 text-center ${
-          isAI ? 'bg-red-500/10' : 'bg-green-500/10'
+          isUncertain ? 'bg-yellow-500/10' : isAI ? 'bg-red-500/10' : 'bg-green-500/10'
         }`}>
-          <p className={`text-4xl md:text-5xl font-bold mb-3 ${
-            isAI ? 'text-red-400' : 'text-green-400'
+          <p className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 ${
+            isUncertain ? 'text-yellow-400' : isAI ? 'text-red-400' : 'text-green-400'
           }`}>
-            {isAI ? '\u26a0\ufe0f Likely AI-Generated' : '\u2713 Looks Authentic'}
+            {isUncertain ? '\u2753 Uncertain' : isAI ? '\u26a0\ufe0f Likely AI-Generated' : '\u2713 Looks Authentic'}
           </p>
-          <p className={`text-lg md:text-xl ${
-            isAI ? 'text-red-300/80' : 'text-green-300/80'
+          <p className={`text-base sm:text-lg md:text-xl ${
+            isUncertain ? 'text-yellow-300/80' : isAI ? 'text-red-300/80' : 'text-green-300/80'
           }`}>
             {getConfidencePhrase(confidence, isAI)}
           </p>
@@ -87,7 +121,22 @@ export default function ResultCard({ result }) {
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">
             What should I do?
           </h3>
-          {isAI ? (
+          {isUncertain ? (
+            <ul className="space-y-2 text-sm text-gray-400">
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-400 mt-0.5 shrink-0">&#x2022;</span>
+                <span>We couldn't reach a clear conclusion. This content <strong className="text-gray-300">may or may not be AI-generated</strong>. Treat with caution.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-400 mt-0.5 shrink-0">&#x2022;</span>
+                <span><strong className="text-gray-300">Don't act on it</strong> if money, personal information, or important decisions are involved</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-yellow-400 mt-0.5 shrink-0">&#x2022;</span>
+                <span>Ask someone you trust for a second opinion before sharing or acting on this content</span>
+              </li>
+            </ul>
+          ) : isAI ? (
             <ul className="space-y-2 text-sm text-gray-400">
               <li className="flex items-start gap-2">
                 <span className="text-red-400 mt-0.5 shrink-0">&#x2022;</span>
@@ -114,6 +163,28 @@ export default function ResultCard({ result }) {
               </li>
             </ul>
           )}
+        </div>
+
+        {/* Share buttons */}
+        <div className="px-6 py-3 border-t border-gray-800/50 flex gap-3">
+          <button
+            onClick={handleCopy}
+            className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 py-2 min-h-[44px]"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            {copyLabel}
+          </button>
+          <button
+            onClick={handleDownload}
+            className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 py-2 min-h-[44px]"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download report
+          </button>
         </div>
 
         {/* File info footer */}
@@ -333,7 +404,7 @@ export default function ResultCard({ result }) {
           {result.frame_analysis && (
             <div className="px-6 py-3 border-t border-gray-800/50">
               <h3 className="text-xs font-medium text-indigo-400 uppercase tracking-wider mb-3">Frame Analysis</h3>
-              <div className="grid grid-cols-3 gap-3 text-center text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center text-sm">
                 <div className="bg-gray-800/50 rounded-lg p-3">
                   <p className="text-gray-500 text-xs">Average</p>
                   <p className="text-lg font-mono font-bold text-white">{result.frame_analysis.average_ai_score}%</p>

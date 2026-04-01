@@ -3,6 +3,8 @@ import Header from './components/Header'
 import Upload from './components/Upload'
 import ResultCard from './components/ResultCard'
 import History from './components/History'
+import FAQ from './components/FAQ'
+import Waitlist from './components/Waitlist'
 
 const HISTORY_KEY = 'ai-detector-history'
 
@@ -27,8 +29,26 @@ export default function App() {
   const handleResult = (res) => {
     setResult(res)
     if (res) {
+      const confidence = res.confidence || 0
+      const isAI = res.verdict === 'AI-Generated'
+      let phrase
+      if (confidence >= 85) phrase = isAI ? "We're very confident this is AI-generated" : "We're very confident this is authentic"
+      else if (confidence >= 65) phrase = isAI ? "We're fairly confident this is AI-generated" : "We're fairly confident this is authentic"
+      else if (confidence >= 40) phrase = "We have some concerns about this content"
+      else phrase = "We're not certain \u2014 treat with caution"
+
       setHistory(prev => [
-        { filename: res.filename, verdict: res.verdict, ai_probability: res.ai_probability, file_type: res.file_type },
+        {
+          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+          filename: res.filename,
+          verdict: res.verdict,
+          confidence: res.confidence,
+          confidencePhrase: phrase,
+          explanation: res.explanation || '',
+          ai_probability: res.ai_probability,
+          file_type: res.file_type,
+          timestamp: new Date().toISOString(),
+        },
         ...prev.slice(0, 19),
       ])
     }
@@ -46,7 +66,7 @@ export default function App() {
       <main className="max-w-3xl mx-auto px-6 py-10">
         {/* Hero */}
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold text-white mb-3">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-3">
             Is this image or video real?
           </h2>
           <p className="text-gray-400 max-w-lg mx-auto">
@@ -77,8 +97,21 @@ export default function App() {
           </div>
         )}
 
+        {/* FAQ */}
+        <FAQ />
+
         {/* History */}
-        <History history={history} onClear={clearHistory} />
+        <History history={history} onClear={clearHistory} onSelect={(item) => {
+          setResult({
+            verdict: item.verdict,
+            confidence: item.confidence,
+            ai_probability: item.ai_probability,
+            explanation: item.explanation,
+            filename: item.filename,
+            file_type: item.file_type,
+            detection_mode: 'history',
+          })
+        }} />
 
         {/* How it works */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -101,6 +134,9 @@ export default function App() {
             </p>
           </div>
         </div>
+
+        {/* Waitlist */}
+        <Waitlist />
       </main>
 
       <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900">

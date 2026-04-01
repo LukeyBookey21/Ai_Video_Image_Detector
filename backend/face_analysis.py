@@ -16,21 +16,15 @@ class FaceAnalyzer:
     """Detects faces and runs deepfake-specific forensic analysis."""
 
     def __init__(self):
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
-        self.eye_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_eye.xml'
-        )
+        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 
     def analyze(self, image: Image.Image) -> dict:
         img_cv = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
 
         # Detect faces
-        faces = self.face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
-        )
+        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
 
         if len(faces) == 0:
             return {
@@ -42,7 +36,7 @@ class FaceAnalyzer:
         face_results = []
         all_scores = []
 
-        for (x, y, w, h) in faces:
+        for x, y, w, h in faces:
             # Extract face region with margin
             margin = int(0.15 * max(w, h))
             fx1 = max(0, x - margin)
@@ -54,11 +48,13 @@ class FaceAnalyzer:
             face_gray = gray[fy1:fy2, fx1:fx2]
 
             score, details = self._analyze_face(face_rgb, face_gray, w, h)
-            face_results.append({
-                "bbox": [int(x), int(y), int(w), int(h)],
-                "ai_score": round(score, 4),
-                **details,
-            })
+            face_results.append(
+                {
+                    "bbox": [int(x), int(y), int(w), int(h)],
+                    "ai_score": round(score, 4),
+                    **details,
+                }
+            )
             all_scores.append(score)
 
         avg_score = float(np.mean(all_scores)) if all_scores else 0.0
@@ -81,7 +77,7 @@ class FaceAnalyzer:
         if w > 20:
             half_w = w // 2
             left = face_gray[:, :half_w]
-            right = np.fliplr(face_gray[:, w - half_w:])
+            right = np.fliplr(face_gray[:, w - half_w :])
             min_h = min(left.shape[0], right.shape[0])
             min_w = min(left.shape[1], right.shape[1])
             left = left[:min_h, :min_w].astype(np.float64)
@@ -98,10 +94,11 @@ class FaceAnalyzer:
 
         # ── 2. Skin Texture Analysis ──
         # AI skin tends to be unrealistically smooth
-        skin_region = face_gray[h//4:3*h//4, w//4:3*w//4]  # Center of face
+        skin_region = face_gray[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4]  # Center of face
         if skin_region.size > 100:
-            skin_noise = np.std(skin_region.astype(np.float64) -
-                              cv2.GaussianBlur(skin_region, (5, 5), 0).astype(np.float64))
+            skin_noise = np.std(
+                skin_region.astype(np.float64) - cv2.GaussianBlur(skin_region, (5, 5), 0).astype(np.float64)
+            )
             details["skin_noise"] = round(float(skin_noise), 2)
 
             if skin_noise < 2.0:
@@ -112,10 +109,10 @@ class FaceAnalyzer:
         # ── 3. Boundary Analysis ──
         # Deepfakes often have artifacts at the face/background boundary
         # Check the edges of the face region
-        edge_ring_top = face_gray[:max(3, h//10), :]
-        edge_ring_bot = face_gray[-(max(3, h//10)):, :]
-        edge_ring_left = face_gray[:, :max(3, w//10)]
-        edge_ring_right = face_gray[:, -(max(3, w//10)):]
+        edge_ring_top = face_gray[: max(3, h // 10), :]
+        edge_ring_bot = face_gray[-(max(3, h // 10)) :, :]
+        edge_ring_left = face_gray[:, : max(3, w // 10)]
+        edge_ring_right = face_gray[:, -(max(3, w // 10)) :]
 
         boundary_regions = [edge_ring_top, edge_ring_bot, edge_ring_left, edge_ring_right]
         boundary_gradients = []
@@ -134,11 +131,13 @@ class FaceAnalyzer:
         # ── 4. Color consistency ──
         if face_bgr.shape[0] > 10 and face_bgr.shape[1] > 10:
             face_lab = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2LAB).astype(np.float64)
-            center = face_lab[h//3:2*h//3, w//3:2*w//3]
-            border = np.concatenate([
-                face_lab[:h//6, :].reshape(-1, 3),
-                face_lab[-(h//6):, :].reshape(-1, 3),
-            ])
+            center = face_lab[h // 3 : 2 * h // 3, w // 3 : 2 * w // 3]
+            border = np.concatenate(
+                [
+                    face_lab[: h // 6, :].reshape(-1, 3),
+                    face_lab[-(h // 6) :, :].reshape(-1, 3),
+                ]
+            )
 
             if center.size > 0 and border.size > 0:
                 center_mean = np.mean(center.reshape(-1, 3), axis=0)
