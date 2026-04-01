@@ -23,7 +23,7 @@ export default function App() {
   const [history, setHistory] = useState(loadHistory)
 
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20)))
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20))) } catch {}
   }, [history])
 
   const handleResult = (res) => {

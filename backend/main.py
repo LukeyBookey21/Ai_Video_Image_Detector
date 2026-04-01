@@ -188,7 +188,7 @@ async def join_waitlist(request: Request, body: WaitlistRequest):
     import re
 
     email = body.email.strip().lower()
-    if not re.match(EMAIL_RE, email):
+    if len(email) > 320 or not re.match(EMAIL_RE, email):
         raise HTTPException(status_code=422, detail="Please enter a valid email address.")
 
     os.makedirs(os.path.dirname(WAITLIST_FILE), exist_ok=True)
@@ -220,7 +220,7 @@ def _error(status: int, message: str, code: str):
 
 def _validate_upload(contents: bytes, content_type: str, filename: str) -> None:
     """Common validation for all uploads: size, magic bytes, type, path traversal."""
-    if any(c in (filename or "") for c in ("..", "/", "\\")):
+    if len(filename or "") > 255 or any(c in (filename or "") for c in ("..", "/", "\\", "\x00")):
         _error(400, "Invalid filename.", "INVALID_FILE_TYPE")
 
     if len(contents) > MAX_FILE_SIZE:
@@ -421,6 +421,18 @@ async def detect_url(request: Request, body: URLRequest):
     try:
         resp = http_requests.get(body.url, stream=True, timeout=15, allow_redirects=True)
         resp.raise_for_status()
+
+        # Re-check final URL after redirects to prevent SSRF via open redirect
+        final_url = urlparse(resp.url)
+        final_host = final_url.hostname or ""
+        if not final_host or final_host == "localhost" or _is_private_ip(final_host):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "This link can't be checked for security reasons. Try downloading the file and uploading it directly.",
+                    "code": "URL_NOT_ALLOWED",
+                },
+            )
 
         content_type = resp.headers.get("Content-Type", "").split(";")[0].strip()
         all_allowed = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES

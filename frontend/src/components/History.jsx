@@ -46,7 +46,7 @@ export default function History({ history, onClear, onSelect }) {
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isAI ? 'bg-red-500' : 'bg-green-500'}`} />
                 <div className="min-w-0 flex-1">
-                  <span className="text-gray-300 truncate block">{truncate(item.filename, 40)}</span>
+                  <span className="text-gray-300 truncate block">{truncate(item.filename || 'Unknown file', 40)}</span>
                   {item.confidencePhrase && (
                     <span className="text-xs text-gray-500 block mt-0.5">{item.confidencePhrase}</span>
                   )}

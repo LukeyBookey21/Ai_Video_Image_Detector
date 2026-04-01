@@ -85,6 +85,17 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
     const trimmed = url.trim()
     if (!trimmed) return
 
+    try {
+      const parsed = new URL(trimmed)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        onError('Please enter a URL starting with http:// or https://')
+        return
+      }
+    } catch {
+      onError('Please enter a valid URL.')
+      return
+    }
+
     setIsLoading(true)
     onError(null)
     onResult(null)
