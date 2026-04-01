@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import Header from './components/Header'
 import Upload from './components/Upload'
 import ResultCard from './components/ResultCard'
-import DetailedStats from './components/DetailedStats'
 import History from './components/History'
 
 const HISTORY_KEY = 'ai-detector-history'
@@ -48,11 +47,11 @@ export default function App() {
         {/* Hero */}
         <div className="text-center mb-10">
           <h2 className="text-3xl font-bold text-white mb-3">
-            Detect AI-Generated Content
+            Is this image or video real?
           </h2>
           <p className="text-gray-400 max-w-lg mx-auto">
-            Upload an image or video to analyze with our 9+ signal forensic pipeline.
-            Combines ML models, frequency, noise, texture, SRM, color space, face, and metadata analysis.
+            Upload a photo or video and we'll check if it was created by AI.
+            It only takes a few seconds.
           </p>
         </div>
 
@@ -73,56 +72,39 @@ export default function App() {
 
         {/* Result */}
         {result && (
-          <div className="mt-6 space-y-4">
+          <div className="mt-6">
             <ResultCard result={result} />
-
-            {/* Explanation */}
-            {result.explanation && (
-              <div className={`px-5 py-4 rounded-xl border text-sm leading-relaxed ${
-                result.verdict === 'AI-Generated'
-                  ? 'bg-red-500/5 border-red-500/30 text-red-300'
-                  : 'bg-green-500/5 border-green-500/30 text-green-300'
-              }`}>
-                <p className="font-medium text-xs uppercase tracking-wider mb-2 opacity-70">
-                  {result.verdict === 'AI-Generated' ? 'Why AI was detected' : 'Why this looks authentic'}
-                </p>
-                <p>{result.explanation}</p>
-              </div>
-            )}
-
-            {/* Detailed Stats */}
-            <DetailedStats result={result} />
           </div>
         )}
 
         {/* History */}
         <History history={history} onClear={clearHistory} />
 
-        {/* Info */}
+        {/* How it works */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Frequency & Noise</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">We check for hidden patterns</h4>
             <p className="text-xs text-gray-500">
-              DCT + FFT spectral analysis, SRM noise fingerprinting, and multi-scale noise consistency. Detects artifacts invisible to the human eye.
+              AI-generated images leave invisible fingerprints in their pixels. We scan for unnatural patterns that the human eye can't see.
             </p>
           </div>
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Color & Face</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">We look at faces closely</h4>
             <p className="text-xs text-gray-500">
-              LAB/YCbCr color space forensics, face symmetry, skin texture, and boundary artifact detection for deepfakes.
+              AI often struggles with faces — subtle asymmetry, unnatural skin texture, and odd boundaries around hair and ears can give it away.
             </p>
           </div>
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-5">
-            <h4 className="text-sm font-medium text-indigo-400 mb-2">Video & Temporal</h4>
+            <h4 className="text-sm font-medium text-indigo-400 mb-2">We analyse video frame by frame</h4>
             <p className="text-xs text-gray-500">
-              Optical flow, physiological signal (rPPG), cross-frame identity consistency, and background-foreground coherence analysis.
+              Deepfake videos can flicker or show inconsistencies between frames. We check every frame individually and how they flow together.
             </p>
           </div>
         </div>
       </main>
 
       <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900">
-        AI Detector v2.0 — 9+ Signal Ensemble Detection Pipeline
+        AI Detector v2.0 — No detection tool is perfect. Always use your own judgement.
       </footer>
     </div>
   )

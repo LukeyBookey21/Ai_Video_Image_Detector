@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 
 function StatRow({ label, value, unit, warn }) {
   return (
@@ -23,31 +23,14 @@ function StatSection({ title, icon, children }) {
 }
 
 export default function DetailedStats({ result }) {
-  const [expanded, setExpanded] = useState(false)
-
   if (!result?.details && !result?.advanced_analysis) return null
 
   const d = result.details || {}
 
   return (
-    <div className="mt-4">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-900/50 border border-gray-800 rounded-xl text-sm text-gray-400 hover:text-gray-200 hover:border-gray-700 transition-colors"
-      >
-        <span className="flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-          Detailed Statistics & Raw Data
-        </span>
-        <svg className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {expanded && (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div>
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Raw Statistics</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Frequency Analysis */}
           {d.frequency_analysis && (
             <StatSection title="Frequency Domain" icon="~">
@@ -196,8 +179,7 @@ export default function DetailedStats({ result }) {
               )}
             </StatSection>
           )}
-        </div>
-      )}
+      </div>
     </div>
   )
 }
