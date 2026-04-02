@@ -8,9 +8,13 @@ background-foreground coherence).
 AI videos often have frame-to-frame inconsistencies that real videos don't.
 """
 
+import io
+import logging
 import tempfile
 import os
 from PIL import Image
+
+logger = logging.getLogger("ai-detector")
 import cv2
 import numpy as np
 from detector import AIImageDetector
@@ -168,7 +172,7 @@ class VideoProcessor:
             physio = self.physio_analyzer.analyze_frames(frames)
             advanced["physiological"] = physio
         except Exception as e:
-            print(f"  Physiological analysis error: {e}")
+            logger.warning(f"  Physiological analysis error: {e}")
             advanced["physiological"] = {"signal_strength": 0.0, "ai_probability": 0.0}
 
         # Cross-frame identity consistency
@@ -176,7 +180,7 @@ class VideoProcessor:
             identity = self.identity_analyzer.analyze_frames(frames)
             advanced["identity_consistency"] = identity
         except Exception as e:
-            print(f"  Identity consistency error: {e}")
+            logger.warning(f"  Identity consistency error: {e}")
             advanced["identity_consistency"] = {"consistency_score": 0.0, "ai_probability": 0.0}
 
         # Background-foreground coherence (sample a few frames)
@@ -282,7 +286,11 @@ class VideoProcessor:
         frame_results = []
         ai_scores = []
         for i, frame in enumerate(frames):
-            result = self.detector.detect_image(frame)
+            # Video frames have no file metadata — pass synthetic JPEG bytes
+            # to avoid false metadata flags (frames are extracted from video, not files)
+            buf = io.BytesIO()
+            frame.save(buf, format="JPEG", quality=95)
+            result = self.detector.detect_image(frame, raw_bytes=buf.getvalue())
             frame_results.append(
                 {
                     "frame_index": i,
@@ -296,7 +304,7 @@ class VideoProcessor:
         temporal = self.analyze_temporal_consistency(raw_frames)
 
         # Advanced deepfake analysis
-        print("  Running advanced deepfake detection...")
+        logger.info("Running advanced deepfake detection...")
         advanced = self.analyze_advanced(frames)
 
         avg_ai_score = float(np.mean(ai_scores))

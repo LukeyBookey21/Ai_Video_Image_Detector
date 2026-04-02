@@ -79,8 +79,18 @@ export default function Admin() {
   )
 
   if (!stats) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-gray-500">Loading stats...</p>
+    <div className="min-h-screen bg-gray-950">
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <h1 className="text-2xl font-bold text-white mb-8">Admin Dashboard</h1>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-gray-900/50 border border-gray-800 rounded-xl p-5 animate-pulse">
+              <div className="h-3 w-16 bg-gray-800 rounded mb-3" />
+              <div className="h-8 w-24 bg-gray-800 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 

@@ -85,7 +85,7 @@ export default function ResultCard({ result }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in-up">
       {/* ============================================ */}
       {/* LAYER 1 — THE VERDICT (always visible)       */}
       {/* ============================================ */}

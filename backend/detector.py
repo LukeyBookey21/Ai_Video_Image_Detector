@@ -100,14 +100,14 @@ class ViTDetector:
             self.error = "torch/transformers not installed"
             return False
         try:
-            print(f"  Loading: {self.model_name}...")
+            logging.info(f"  Loading: {self.model_name}...")
             self.pipe = hf_pipeline("image-classification", model=self.model_name, device=-1)
             self.available = True
-            print(f"  Loaded: {self.model_name}")
+            logging.info(f"  Loaded: {self.model_name}")
             return True
         except Exception as e:
             self.error = str(e)
-            print(f"  Failed: {self.model_name}: {e}")
+            logging.warning(f"  Failed: {self.model_name}: {e}")
             return False
 
     def predict(self, image: Image.Image) -> float:
@@ -137,7 +137,7 @@ class ViTDetector:
                     return 1.0 - score
             return None
         except Exception as e:
-            print(f"  ML prediction error ({self.model_name}): {e}")
+            logging.warning(f"  ML prediction error ({self.model_name}): {e}")
             return None
 
 
@@ -610,8 +610,14 @@ class MetadataAnalyzer:
         if has_software:
             sw = exif_data.get("Software", "").lower()
             ai_keywords = [
-                "stable diffusion", "midjourney", "dall-e", "comfyui",
-                "automatic1111", "novelai", "nai", "diffusion",
+                "stable diffusion",
+                "midjourney",
+                "dall-e",
+                "comfyui",
+                "automatic1111",
+                "novelai",
+                "nai",
+                "diffusion",
             ]
             if any(kw in sw for kw in ai_keywords):
                 scores.append(0.60)
@@ -626,9 +632,19 @@ class MetadataAnalyzer:
 
         # Perfect power-of-2 or common AI dimensions
         ai_dimensions = [
-            (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
-            (512, 768), (768, 512), (1024, 768), (768, 1024),
-            (1024, 1792), (1792, 1024), (1344, 768), (768, 1344),
+            (512, 512),
+            (768, 768),
+            (1024, 1024),
+            (1536, 1536),
+            (2048, 2048),
+            (512, 768),
+            (768, 512),
+            (1024, 768),
+            (768, 1024),
+            (1024, 1792),
+            (1792, 1024),
+            (1344, 768),
+            (768, 1344),
         ]
         if (w, h) in ai_dimensions:
             scores.append(0.15)
@@ -711,11 +727,11 @@ class AIImageDetector:
 
     def load_model(self):
         if not _HAS_ML:
-            print("ML libraries not available. Install with: python install_ml.py")
-            print("Running in heuristic-only mode.")
+            logging.info("ML libraries not available. Install with: python install_ml.py")
+            logging.info("Running in heuristic-only mode.")
             return
 
-        print("Loading ML models...")
+        logging.info("Loading ML models...")
         loaded = []
         if self.vit_primary.load():
             loaded.append("sdxl-detector")
@@ -725,9 +741,9 @@ class AIImageDetector:
         if loaded:
             self.ml_mode = True
             self.ml_models_loaded = loaded
-            print(f"ML ensemble active: {', '.join(loaded)}")
+            logging.info(f"ML ensemble active: {', '.join(loaded)}")
         else:
-            print("No ML models loaded. Running heuristic-only mode.")
+            logging.info("No ML models loaded. Running heuristic-only mode.")
 
     @staticmethod
     def _sanitize(val):
@@ -1038,7 +1054,9 @@ class AIImageDetector:
         ms = meta["ai_probability"]
         flags = meta.get("flags", [])
         if "png_no_exif" in flags:
-            reasons.append("This is a PNG file with no camera data at all — a very common format for AI-generated images")
+            reasons.append(
+                "This is a PNG file with no camera data at all — a very common format for AI-generated images"
+            )
         elif "png_no_camera_metadata" in flags:
             reasons.append("PNG file without camera information — often seen in AI outputs")
         elif "no_exif_data" in flags:

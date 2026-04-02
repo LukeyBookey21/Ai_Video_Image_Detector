@@ -153,7 +153,11 @@ export default function App() {
 
       <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900 space-y-1">
         <p>AI Detector v2.0 — No detection tool is perfect. Always use your own judgement.</p>
-        <p><a href="/privacy" className="text-gray-500 hover:text-gray-300 transition-colors">Privacy Policy</a></p>
+        <p>
+          <a href="/about" className="text-gray-500 hover:text-gray-300 transition-colors">How it works</a>
+          <span className="text-gray-700 mx-2">|</span>
+          <a href="/privacy" className="text-gray-500 hover:text-gray-300 transition-colors">Privacy</a>
+        </p>
       </footer>
     </div>
   )
