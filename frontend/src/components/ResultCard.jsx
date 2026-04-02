@@ -176,6 +176,39 @@ export default function ResultCard({ result }) {
           )}
         </div>
 
+        {/* Verification links */}
+        {isAI && (
+          <div className="px-6 py-3 border-t border-gray-800/50 bg-gray-900/40">
+            <p className="text-xs text-gray-500 mb-2">Verify this content yourself:</p>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="https://tineye.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 border border-gray-800 rounded-lg transition-colors"
+              >
+                TinEye Reverse Search
+              </a>
+              <a
+                href="https://images.google.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 border border-gray-800 rounded-lg transition-colors"
+              >
+                Google Image Search
+              </a>
+              <a
+                href="https://www.actionfraud.police.uk"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 border border-red-900/50 rounded-lg transition-colors"
+              >
+                Report to Action Fraud
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Share buttons */}
         <div className="px-6 py-3 border-t border-gray-800/50 flex gap-3">
           <button
