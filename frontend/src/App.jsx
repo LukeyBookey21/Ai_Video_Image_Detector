@@ -156,6 +156,8 @@ export default function App() {
         <p>
           <a href="/about" className="text-gray-500 hover:text-gray-300 transition-colors">How it works</a>
           <span className="text-gray-700 mx-2">|</span>
+          <a href="/gallery" className="text-gray-500 hover:text-gray-300 transition-colors">Spot fakes</a>
+          <span className="text-gray-700 mx-2">|</span>
           <a href="/privacy" className="text-gray-500 hover:text-gray-300 transition-colors">Privacy</a>
         </p>
       </footer>

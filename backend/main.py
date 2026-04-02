@@ -161,6 +161,28 @@ async def stats_endpoint():
     return get_stats()
 
 
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus-compatible metrics endpoint."""
+    from fastapi.responses import PlainTextResponse
+
+    s = get_stats()
+    lines = [
+        "# HELP ai_detector_analyses_total Total number of analyses performed",
+        "# TYPE ai_detector_analyses_total counter",
+        f'ai_detector_analyses_total {s.get("total_analyses", 0)}',
+        "# HELP ai_detector_verdicts_total Verdicts by type",
+        "# TYPE ai_detector_verdicts_total counter",
+        f'ai_detector_verdicts_total{{verdict="ai_detected"}} {s.get("ai_detected", 0)}',
+        f'ai_detector_verdicts_total{{verdict="authentic"}} {s.get("authentic", 0)}',
+        f'ai_detector_verdicts_total{{verdict="uncertain"}} {s.get("uncertain", 0)}',
+        "# HELP ai_detector_ml_models_loaded Whether ML models are loaded",
+        "# TYPE ai_detector_ml_models_loaded gauge",
+        f"ai_detector_ml_models_loaded {1 if ai_detector.ml_mode else 0}",
+    ]
+    return PlainTextResponse("\n".join(lines) + "\n")
+
+
 @app.get("/api/stats/recent")
 async def recent_analyses():
     return {"analyses": get_recent_analyses(50)}
