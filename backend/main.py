@@ -5,6 +5,7 @@ FastAPI backend with multi-signal ensemble ML detection.
 
 import ipaddress
 import json
+import logging
 import os
 import socket
 import tempfile
@@ -13,6 +14,13 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("ai-detector")
 from urllib.parse import urlparse
 
 from filelock import FileLock
@@ -30,10 +38,14 @@ import io
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to every response."""
+    """Add security headers and request logging to every response."""
 
     async def dispatch(self, request: Request, call_next):
+        start = time.time()
         response = await call_next(request)
+        elapsed = round((time.time() - start) * 1000)
+        if request.url.path.startswith("/api/detect"):
+            logger.info(f"{request.method} {request.url.path} -> {response.status_code} ({elapsed}ms)")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -84,9 +96,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Pre-loading detection models...")
+    logger.info("Pre-loading detection models...")
     ai_detector.load_model()
-    print("Ready — all analyzers active.")
+    logger.info("Ready — all analyzers active.")
     yield
 
 
@@ -294,7 +306,7 @@ async def detect_image(
         try:
             heatmap_data = generate_heatmap(image)
         except Exception as e:
-            print(f"Heatmap generation error: {e}")
+            logger.warning(f"Heatmap generation error: {e}")
 
     elapsed = round(time.time() - start_time, 2)
 
@@ -331,12 +343,12 @@ async def detect_video(request: Request, file: UploadFile = File(...)):
 
         start_time = time.time()
         processor = get_video_processor(ai_detector)
-        print(f"Analyzing video: {file.filename} ({len(contents) / 1024 / 1024:.1f} MB)")
+        logger.info(f"Analyzing video: {file.filename} ({len(contents) / 1024 / 1024:.1f} MB)")
         result = processor.analyze_video(tmp_path)
         elapsed = round(time.time() - start_time, 2)
-        print(f"Video analysis complete: {result.get('verdict')} ({elapsed}s)")
+        logger.info(f"Video analysis complete: {result.get('verdict')} ({elapsed}s)")
     except Exception as e:
-        print(f"Video analysis error: {e}")
+        logger.error(f"Video analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Video analysis failed: {str(e)}")
     finally:
         if os.path.exists(tmp_path):

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import DetailedStats from './DetailedStats'
+import SignalSummary from './SignalSummary'
 
 function getConfidencePhrase(confidence, isAI) {
   const subject = isAI ? 'AI-generated' : 'authentic'
@@ -118,6 +119,9 @@ export default function ResultCard({ result }) {
             </p>
           </div>
         )}
+
+        {/* Signal summary — plain English */}
+        <SignalSummary details={result.details} />
 
         {/* What should I do? */}
         <div className="px-6 py-5 border-t border-gray-800/50 bg-gray-900/80">
