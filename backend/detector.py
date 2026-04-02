@@ -1037,13 +1037,23 @@ class AIImageDetector:
         # Metadata
         ms = meta["ai_probability"]
         flags = meta.get("flags", [])
-        if "no_camera_metadata" in flags:
-            reasons.append("No camera EXIF metadata found (real photos usually contain camera make/model/settings)")
+        if "png_no_exif" in flags:
+            reasons.append("This is a PNG file with no camera data at all — a very common format for AI-generated images")
+        elif "png_no_camera_metadata" in flags:
+            reasons.append("PNG file without camera information — often seen in AI outputs")
+        elif "no_exif_data" in flags:
+            reasons.append("No camera EXIF data found in the file")
+        elif "no_camera_metadata" in flags:
+            reasons.append("No camera make/model/settings found in the metadata")
         if any("ai_software" in f for f in flags):
-            reasons.append("EXIF metadata contains known AI generation software tags")
+            reasons.append("File metadata contains AI generation software tags")
         if any("ai_dimension" in f for f in flags):
             dim = meta.get("dimensions", "")
             reasons.append(f"Image dimensions ({dim}) match common AI generator output sizes")
+        if "dimensions_divisible_64" in flags:
+            reasons.append("Image dimensions are multiples of 64 — a pattern typical of diffusion model outputs")
+        if "standard_jpeg_qtable" in flags:
+            reasons.append("JPEG uses standard quantization tables rather than camera-specific ones")
 
         # Mitigating factors
         if vit1 is not None and vit1 < 0.3:
@@ -1051,7 +1061,11 @@ class AIImageDetector:
         if stat.get("noise_std", 0) > 8:
             mitigating.append("natural-looking noise levels present")
         if "has_camera_info" in flags:
-            mitigating.append("contains camera EXIF data")
+            mitigating.append("contains real camera EXIF data (make, model, settings)")
+        if "camera_jpeg_qtable" in flags:
+            mitigating.append("JPEG uses camera-specific quantization tables")
+        if "has_gps" in flags:
+            mitigating.append("contains GPS location data")
         if texture.get("edge_density", 0) > 0.15:
             mitigating.append("rich edge detail consistent with real imagery")
 
