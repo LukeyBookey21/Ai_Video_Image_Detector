@@ -466,6 +466,56 @@ async def detect_batch(request: Request, files: list[UploadFile] = File(...)):
     return {"results": results, "total": len(results)}
 
 
+@app.post("/api/compare")
+@limiter.limit("10/hour")
+async def compare_images(request: Request, file1: UploadFile = File(...), file2: UploadFile = File(...)):
+    """Compare two images — analyse both and highlight differences."""
+    contents1 = await file1.read()
+    contents2 = await file2.read()
+    _validate_upload(contents1, file1.content_type, file1.filename or "")
+    _validate_upload(contents2, file2.content_type, file2.filename or "")
+
+    if file1.content_type not in ALLOWED_IMAGE_TYPES or file2.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Both files must be images.")
+
+    try:
+        img1 = Image.open(io.BytesIO(contents1))
+        img2 = Image.open(io.BytesIO(contents2))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not open one or both image files.")
+
+    result1 = ai_detector.detect_image(img1, raw_bytes=contents1)
+    result2 = ai_detector.detect_image(img2, raw_bytes=contents2)
+
+    # Compare the two results
+    score_diff = abs(result1["ai_probability"] - result2["ai_probability"])
+    same_verdict = result1["verdict"] == result2["verdict"]
+
+    return {
+        "image1": {
+            "filename": file1.filename,
+            "verdict": result1["verdict"],
+            "ai_probability": result1["ai_probability"],
+            "confidence": result1["confidence"],
+        },
+        "image2": {
+            "filename": file2.filename,
+            "verdict": result2["verdict"],
+            "ai_probability": result2["ai_probability"],
+            "confidence": result2["confidence"],
+        },
+        "comparison": {
+            "same_verdict": same_verdict,
+            "score_difference": round(score_diff, 1),
+            "summary": (
+                "Both images appear to have the same origin."
+                if same_verdict and score_diff < 10
+                else "These images have different forensic profiles — one may be manipulated or AI-generated."
+            ),
+        },
+    }
+
+
 class URLRequest(BaseModel):
     url: str
 
