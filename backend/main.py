@@ -41,10 +41,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         start = time.time()
+        request_id = str(uuid.uuid4())[:8]
         response = await call_next(request)
         elapsed = round((time.time() - start) * 1000)
         if request.url.path.startswith("/api/detect"):
-            logger.info(f"{request.method} {request.url.path} -> {response.status_code} ({elapsed}ms)")
+            logger.info(f"[{request_id}] {request.method} {request.url.path} -> {response.status_code} ({elapsed}ms)")
+        response.headers["X-Request-Id"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
