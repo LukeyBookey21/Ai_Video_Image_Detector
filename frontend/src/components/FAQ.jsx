@@ -45,6 +45,8 @@ export default function FAQ() {
             <div key={i} className="border border-gray-800 rounded-xl overflow-hidden">
               <button
                 onClick={() => toggle(i)}
+                aria-expanded={isOpen}
+                aria-controls={`faq-answer-${i}`}
                 className="w-full flex items-center justify-between px-3 sm:px-5 py-4 text-left text-sm text-gray-300 hover:bg-gray-900/50 transition-colors"
                 style={{ minHeight: '44px' }}
               >
@@ -54,6 +56,8 @@ export default function FAQ() {
                 </span>
               </button>
               <div
+                id={`faq-answer-${i}`}
+                role="region"
                 className="overflow-hidden transition-all duration-300 ease-in-out"
                 style={{ maxHeight: isOpen ? '200px' : '0px' }}
               >

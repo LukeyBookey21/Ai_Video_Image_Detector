@@ -127,6 +127,38 @@ export default function Admin() {
             Last analysis: {new Date(stats.last_updated).toLocaleString()}
           </p>
         )}
+
+        <RecentAnalyses />
+      </div>
+    </div>
+  )
+}
+
+function RecentAnalyses() {
+  const [analyses, setAnalyses] = React.useState([])
+
+  React.useEffect(() => {
+    fetch('/api/stats/recent')
+      .then(r => r.ok ? r.json() : { analyses: [] })
+      .then(d => setAnalyses(d.analyses || []))
+      .catch(() => {})
+  }, [])
+
+  if (analyses.length === 0) return null
+
+  return (
+    <div className="mt-8">
+      <h2 className="text-sm font-medium text-gray-400 mb-3">Recent analyses</h2>
+      <div className="space-y-1">
+        {analyses.slice(0, 20).map((a, i) => (
+          <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-900/30 rounded-lg text-xs">
+            <span className="text-gray-400 truncate flex-1 mr-2">{a.filename || 'unknown'}</span>
+            <span className={`font-medium ${
+              a.verdict === 'AI-Generated' ? 'text-red-400' : a.verdict === 'Real/Authentic' ? 'text-green-400' : 'text-yellow-400'
+            }`}>{a.verdict === 'AI-Generated' ? 'AI' : a.verdict === 'Real/Authentic' ? 'Real' : '?'}</span>
+            <span className="text-gray-600 ml-3 w-16 text-right">{a.processing_time}s</span>
+          </div>
+        ))}
       </div>
     </div>
   )

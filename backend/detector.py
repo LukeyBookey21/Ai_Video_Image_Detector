@@ -545,6 +545,70 @@ class SRMAnalyzer:
         }
 
 
+class JPEGGhostAnalyzer:
+    """Detect JPEG compression inconsistencies (double compression, format conversion)."""
+
+    def analyze(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
+        if raw_bytes is None:
+            return {"ai_probability": 0.0, "ghost_score": 0.0, "compression_type": "unknown"}
+
+        # Detect format from raw bytes
+        is_jpeg = raw_bytes[:2] == b"\xff\xd8"
+        if not is_jpeg:
+            # Non-JPEG: check if it's a clean PNG (common for AI)
+            is_png = raw_bytes[:4] == b"\x89PNG"
+            if is_png:
+                # PNG images — check for unusual smoothness in DCT domain
+                # (would show compression ghosts if it was originally JPEG)
+                return {"ai_probability": 0.05, "ghost_score": 0.0, "compression_type": "png_original"}
+            return {"ai_probability": 0.0, "ghost_score": 0.0, "compression_type": "other"}
+
+        try:
+            img_array = np.array(image.convert("RGB"), dtype=np.float64)
+            if img_array.shape[0] < 16 or img_array.shape[1] < 16:
+                return {"ai_probability": 0.0, "ghost_score": 0.0, "compression_type": "too_small"}
+
+            # Re-compress at multiple quality levels and measure difference
+            # Double-compressed JPEGs show minimum error at the original quality
+            errors = []
+            for quality in [60, 70, 80, 90, 95]:
+                buf = io.BytesIO()
+                image.save(buf, format="JPEG", quality=quality)
+                buf.seek(0)
+                recompressed = np.array(Image.open(buf).convert("RGB"), dtype=np.float64)
+                diff = np.mean(np.abs(img_array - recompressed))
+                errors.append((quality, diff))
+
+            # In a single-compressed JPEG, error decreases monotonically with quality
+            # In a double-compressed JPEG, there's a dip at the original quality
+            diffs = [e[1] for e in errors]
+            min_idx = np.argmin(diffs)
+            monotonic = all(diffs[i] >= diffs[i + 1] for i in range(len(diffs) - 1))
+
+            # Ghost score: how non-monotonic is the error curve
+            ghost_score = 0.0
+            if not monotonic and min_idx > 0 and min_idx < len(diffs) - 1:
+                # Local minimum in the middle = double compression
+                ghost_score = (diffs[min_idx - 1] - diffs[min_idx]) / (diffs[0] + 1e-10)
+
+            # Very low overall error at high quality = likely never compressed before
+            # (AI PNGs saved as JPEG for the first time)
+            if diffs[-1] < 0.5:
+                ai_prob = 0.08  # Suspiciously clean
+            elif ghost_score > 0.1:
+                ai_prob = 0.0  # Double compression = likely real (been shared around)
+            else:
+                ai_prob = 0.0
+
+            return {
+                "ai_probability": round(ai_prob, 4),
+                "ghost_score": round(ghost_score, 4),
+                "compression_type": "double_jpeg" if ghost_score > 0.1 else "single_jpeg",
+            }
+        except Exception:
+            return {"ai_probability": 0.0, "ghost_score": 0.0, "compression_type": "error"}
+
+
 class MetadataAnalyzer:
     """Analyzes image metadata, format, and compression for AI indicators."""
 
@@ -713,6 +777,7 @@ class AIImageDetector:
         self.texture_analyzer = TextureAnalyzer()
         self.srm_analyzer = SRMAnalyzer()
         self.metadata_analyzer = MetadataAnalyzer()
+        self.jpeg_ghost_analyzer = JPEGGhostAnalyzer()
 
         # Advanced analyzers
         from color_analysis import ColorSpaceAnalyzer
@@ -800,6 +865,7 @@ class AIImageDetector:
         meta = self._sanitize_dict(self.metadata_analyzer.analyze(image_rgb, raw_bytes))
         color = self._sanitize_dict(self.color_analyzer.analyze(image_rgb))
         face = self._sanitize_dict(self.face_analyzer.analyze(image_rgb))
+        jpeg_ghost = self._sanitize_dict(self.jpeg_ghost_analyzer.analyze(image_rgb, raw_bytes))
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -938,6 +1004,12 @@ class AIImageDetector:
             details["hive_api"] = {
                 "ai_score": round(hive_score * 100, 1),
                 "source": "Hive Moderation API",
+            }
+
+        if jpeg_ghost.get("compression_type") != "unknown":
+            details["jpeg_ghost"] = {
+                "ghost_score": jpeg_ghost.get("ghost_score", 0),
+                "compression_type": jpeg_ghost.get("compression_type", "unknown"),
             }
 
         # ── Generate Explanation ──

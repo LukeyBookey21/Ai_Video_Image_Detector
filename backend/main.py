@@ -23,7 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger("ai-detector")
 from urllib.parse import urlparse
 
-from filelock import FileLock
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Request, Response
 from pydantic import BaseModel
@@ -57,6 +56,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 from detector import detector as ai_detector
 from video_processor import get_video_processor
 from heatmap import generate_heatmap
+from database import init_db, update_stats, get_stats, add_to_waitlist, log_analysis, get_recent_analyses
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"}
 ALLOWED_VIDEO_TYPES = {"video/mp4", "video/avi", "video/quicktime", "video/x-msvideo", "video/webm"}
@@ -96,6 +96,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     logger.info("Pre-loading detection models...")
     ai_detector.load_model()
     logger.info("Ready — all analyzers active.")
@@ -150,41 +151,21 @@ app.add_middleware(
 )
 
 
-STATS_FILE = os.path.join(os.path.dirname(__file__), "data", "stats.json")
-STATS_LOCK = STATS_FILE + ".lock"
-
-
 def _update_stats(verdict: str) -> None:
-    """Increment analysis counters in stats.json with file locking."""
-    os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
-    with FileLock(STATS_LOCK):
-        if os.path.exists(STATS_FILE):
-            with open(STATS_FILE) as f:
-                stats = json.load(f)
-        else:
-            stats = {"total_analyses": 0, "ai_detected": 0, "authentic": 0, "uncertain": 0, "last_updated": ""}
-        stats["total_analyses"] += 1
-        if verdict == "AI-Generated":
-            stats["ai_detected"] += 1
-        elif verdict == "Real/Authentic":
-            stats["authentic"] += 1
-        else:
-            stats["uncertain"] += 1
-        stats["last_updated"] = datetime.utcnow().isoformat() + "Z"
-        with open(STATS_FILE, "w") as f:
-            json.dump(stats, f)
+    """Increment analysis counters in SQLite database."""
+    update_stats(verdict)
 
 
 @app.get("/api/stats")
-async def get_stats():
-    if os.path.exists(STATS_FILE):
-        with open(STATS_FILE) as f:
-            return json.load(f)
-    return {"total_analyses": 0, "ai_detected": 0, "authentic": 0, "uncertain": 0, "last_updated": ""}
+async def stats_endpoint():
+    return get_stats()
 
 
-WAITLIST_FILE = os.path.join(os.path.dirname(__file__), "data", "waitlist.csv")
-WAITLIST_LOCK = WAITLIST_FILE + ".lock"
+@app.get("/api/stats/recent")
+async def recent_analyses():
+    return {"analyses": get_recent_analyses(50)}
+
+
 EMAIL_RE = r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
 
 
@@ -195,7 +176,6 @@ class WaitlistRequest(BaseModel):
 @app.post("/api/waitlist")
 @limiter.limit("3/hour")
 async def join_waitlist(request: Request, body: WaitlistRequest):
-    import csv
     import hashlib
     import re
 
@@ -203,26 +183,11 @@ async def join_waitlist(request: Request, body: WaitlistRequest):
     if len(email) > 320 or not re.match(EMAIL_RE, email):
         raise HTTPException(status_code=422, detail="Please enter a valid email address.")
 
-    os.makedirs(os.path.dirname(WAITLIST_FILE), exist_ok=True)
     ip_raw = get_remote_address(request) or "unknown"
     ip_hash = hashlib.sha256(ip_raw.encode()).hexdigest()
 
-    with FileLock(WAITLIST_LOCK):
-        existing = set()
-        if os.path.exists(WAITLIST_FILE):
-            with open(WAITLIST_FILE, newline="") as f:
-                for row in csv.reader(f):
-                    if row:
-                        existing.add(row[0])
-
-        if email in existing:
-            return {"status": "already_registered"}
-
-        with open(WAITLIST_FILE, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([email, datetime.utcnow().isoformat() + "Z", ip_hash])
-
-    return {"status": "added"}
+    status = add_to_waitlist(email, ip_hash)
+    return {"status": status}
 
 
 def _error(status: int, message: str, code: str):
@@ -322,6 +287,14 @@ async def detect_image(
         response["heatmap"] = heatmap_data
 
     _update_stats(result.get("verdict", ""))
+    log_analysis(
+        file.filename or "",
+        "image",
+        result.get("verdict", ""),
+        result.get("confidence", 0),
+        result.get("ai_probability", 0),
+        elapsed,
+    )
     return response
 
 
@@ -377,6 +350,62 @@ async def detect_auto(request: Request, file: UploadFile = File(...)):
             status_code=400,
             detail="This file type isn't supported. Please upload a JPEG, PNG, WebP, MP4, MOV, AVI, or WebM file.",
         )
+
+
+@app.post("/api/detect/batch")
+@limiter.limit("5/hour")
+async def detect_batch(request: Request, files: list[UploadFile] = File(...)):
+    """Analyse multiple files in one request (max 10)."""
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 files per batch request.")
+
+    results = []
+    for file in files:
+        try:
+            contents = await file.read()
+            _validate_upload(contents, file.content_type, file.filename or "")
+
+            start_time = time.time()
+            if file.content_type in ALLOWED_IMAGE_TYPES:
+                image = Image.open(io.BytesIO(contents))
+                result = ai_detector.detect_image(image, raw_bytes=contents)
+                file_type = "image"
+            elif file.content_type in ALLOWED_VIDEO_TYPES:
+                suffix = os.path.splitext(file.filename or ".mp4")[1]
+                fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+                try:
+                    os.write(fd, contents)
+                    os.close(fd)
+                    processor = get_video_processor(ai_detector)
+                    result = processor.analyze_video(tmp_path)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                file_type = "video"
+            else:
+                results.append({"filename": file.filename, "error": "Unsupported file type"})
+                continue
+
+            elapsed = round(time.time() - start_time, 2)
+            _update_stats(result.get("verdict", ""))
+            results.append(
+                {
+                    "filename": file.filename,
+                    "file_type": file_type,
+                    "verdict": result.get("verdict"),
+                    "confidence": result.get("confidence"),
+                    "ai_probability": result.get("ai_probability"),
+                    "explanation": result.get("explanation", ""),
+                    "processing_time_seconds": elapsed,
+                }
+            )
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else e.detail.get("error", str(e.detail))
+            results.append({"filename": file.filename, "error": detail})
+        except Exception as e:
+            results.append({"filename": file.filename, "error": str(e)})
+
+    return {"results": results, "total": len(results)}
 
 
 class URLRequest(BaseModel):

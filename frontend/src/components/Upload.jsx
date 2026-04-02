@@ -1,6 +1,7 @@
-/* Upload component — file upload and URL input tabs */
+/* Upload component — file upload, URL input, and batch tabs */
 import React, { useState, useRef, useCallback } from 'react'
 import ProgressIndicator from './ProgressIndicator'
+import BatchUpload from './BatchUpload'
 
 const ACCEPTED_TYPES = [
   'image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff',
@@ -212,6 +213,14 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
         >
           Paste a link
         </button>
+        <button
+          onClick={() => setTab('batch')}
+          className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'batch' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          Check multiple
+        </button>
       </div>
 
       {tab === 'file' ? (
@@ -290,7 +299,7 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
             </div>
           )}
         </>
-      ) : (
+      ) : tab === 'url' ? (
         /* URL input tab */
         <div className={`rounded-2xl border border-gray-700 bg-gray-900/50 p-6 md:p-8 ${isLoading ? 'opacity-60 pointer-events-none' : ''}`}>
           {isLoading ? (
@@ -318,6 +327,9 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
             </div>
           )}
         </div>
+      ) : (
+        /* Batch upload tab */
+        <BatchUpload onError={onError} />
       )}
     </div>
   )

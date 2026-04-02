@@ -93,9 +93,13 @@ export default function ResultCard({ result }) {
         isUncertain ? 'border-yellow-500/50 shadow-lg shadow-yellow-500/10' : isAI ? 'border-red-500/50 shadow-lg shadow-red-500/10' : 'border-green-500/50 shadow-lg shadow-green-500/10'
       }`}>
         {/* Verdict Banner */}
-        <div className={`px-6 py-8 text-center ${
-          isUncertain ? 'bg-yellow-500/10' : isAI ? 'bg-red-500/10' : 'bg-green-500/10'
-        }`}>
+        <div
+          role="alert"
+          aria-live="assertive"
+          className={`px-6 py-8 text-center ${
+            isUncertain ? 'bg-yellow-500/10' : isAI ? 'bg-red-500/10' : 'bg-green-500/10'
+          }`}
+        >
           <p className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 ${
             isUncertain ? 'text-yellow-400' : isAI ? 'text-red-400' : 'text-green-400'
           }`}>
