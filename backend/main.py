@@ -267,6 +267,31 @@ async def health_check():
     }
 
 
+# Simple in-memory cache for repeat analyses (LRU, max 100 entries)
+import hashlib as _hashlib
+from collections import OrderedDict
+
+_analysis_cache = OrderedDict()
+_CACHE_MAX = 100
+
+
+def _cache_key(contents: bytes) -> str:
+    return _hashlib.sha256(contents).hexdigest()[:16]
+
+
+def _cache_get(key: str) -> dict | None:
+    if key in _analysis_cache:
+        _analysis_cache.move_to_end(key)
+        return _analysis_cache[key]
+    return None
+
+
+def _cache_set(key: str, result: dict):
+    _analysis_cache[key] = result
+    if len(_analysis_cache) > _CACHE_MAX:
+        _analysis_cache.popitem(last=False)
+
+
 @app.post("/api/detect/image")
 @limiter.limit("10/hour")
 async def detect_image(
@@ -279,6 +304,14 @@ async def detect_image(
 
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Please upload an image file for this endpoint.")
+
+    # Check cache
+    cache_key = _cache_key(contents)
+    cached = _cache_get(cache_key)
+    if cached:
+        cached["filename"] = file.filename
+        cached["cached"] = True
+        return cached
 
     try:
         image = Image.open(io.BytesIO(contents))
@@ -317,6 +350,7 @@ async def detect_image(
         result.get("ai_probability", 0),
         elapsed,
     )
+    _cache_set(cache_key, response)
     return response
 
 

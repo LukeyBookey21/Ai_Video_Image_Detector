@@ -7,10 +7,12 @@ import About from './components/About.jsx'
 import Gallery from './components/Gallery.jsx'
 import Privacy from './components/Privacy.jsx'
 import NotFound from './components/NotFound.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
@@ -21,5 +23,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>,
 )
