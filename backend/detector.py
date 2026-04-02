@@ -545,6 +545,63 @@ class SRMAnalyzer:
         }
 
 
+class PatchConsistencyAnalyzer:
+    """Analyze local noise consistency across image patches.
+    Real photos have uniform sensor noise; AI images often have varying noise levels."""
+
+    def analyze(self, image: Image.Image) -> dict:
+        try:
+            img = np.array(image.convert("L").resize((256, 256)), dtype=np.float64)
+            patch_size = 32
+            h, w = img.shape
+
+            # Compute local noise level in each patch (std of high-pass filtered patch)
+            noise_levels = []
+            for y in range(0, h - patch_size + 1, patch_size):
+                for x in range(0, w - patch_size + 1, patch_size):
+                    patch = img[y : y + patch_size, x : x + patch_size]
+                    # High-pass filter to isolate noise
+                    from scipy.ndimage import median_filter
+
+                    smoothed = median_filter(patch, size=3)
+                    noise = patch - smoothed
+                    noise_levels.append(np.std(noise))
+
+            if len(noise_levels) < 4:
+                return {"ai_probability": 0.0, "noise_consistency": 1.0}
+
+            noise_array = np.array(noise_levels)
+            mean_noise = np.mean(noise_array)
+            std_noise = np.std(noise_array)
+            cv = std_noise / (mean_noise + 1e-10)  # Coefficient of variation
+
+            # Real photos: consistent noise (low CV, typically 0.2-0.5)
+            # AI images: can have very inconsistent noise or artificially uniform noise
+            scores = []
+
+            # Very low mean noise = AI smoothness
+            if mean_noise < 1.5:
+                scores.append(0.15)
+
+            # Very high noise variation across patches = possible compositing or AI
+            if cv > 0.7:
+                scores.append(0.10)
+
+            # Artificially uniform noise (too perfect) = possibly AI
+            if cv < 0.15 and mean_noise < 3.0:
+                scores.append(0.12)
+
+            ai_prob = min(sum(scores), 0.3)
+            return {
+                "ai_probability": round(ai_prob, 4),
+                "noise_consistency": round(1.0 - cv, 4),
+                "mean_patch_noise": round(float(mean_noise), 4),
+                "noise_cv": round(float(cv), 4),
+            }
+        except Exception:
+            return {"ai_probability": 0.0, "noise_consistency": 1.0}
+
+
 class JPEGGhostAnalyzer:
     """Detect JPEG compression inconsistencies (double compression, format conversion)."""
 
@@ -778,6 +835,7 @@ class AIImageDetector:
         self.srm_analyzer = SRMAnalyzer()
         self.metadata_analyzer = MetadataAnalyzer()
         self.jpeg_ghost_analyzer = JPEGGhostAnalyzer()
+        self.patch_analyzer = PatchConsistencyAnalyzer()
 
         # Advanced analyzers
         from color_analysis import ColorSpaceAnalyzer
@@ -866,6 +924,7 @@ class AIImageDetector:
         color = self._sanitize_dict(self.color_analyzer.analyze(image_rgb))
         face = self._sanitize_dict(self.face_analyzer.analyze(image_rgb))
         jpeg_ghost = self._sanitize_dict(self.jpeg_ghost_analyzer.analyze(image_rgb, raw_bytes))
+        patch = self._sanitize_dict(self.patch_analyzer.analyze(image_rgb))
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -940,9 +999,12 @@ class AIImageDetector:
             )
             mode = "heuristic_only"
 
+        # Add bonus signals (patch consistency, JPEG ghost) as small adjustments
+        ensemble_score += patch.get("ai_probability", 0) * 0.05
+        ensemble_score += jpeg_ghost.get("ai_probability", 0) * 0.03
+
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
         # Detection threshold calibrated from benchmark results — see BENCHMARK.md
-        # Optimal F1 threshold: 0.35 (from scripts/calibrate_threshold.py)
         detection_threshold = 0.33
         verdict = "AI-Generated" if ensemble_score > detection_threshold else "Real/Authentic"
         confidence = ensemble_score if ensemble_score > detection_threshold else (1.0 - ensemble_score)
@@ -1006,6 +1068,11 @@ class AIImageDetector:
                 "source": "Hive Moderation API",
             }
 
+        if patch.get("noise_cv") is not None:
+            details["patch_analysis"] = {
+                "noise_consistency": patch.get("noise_consistency", 0),
+                "mean_patch_noise": patch.get("mean_patch_noise", 0),
+            }
         if jpeg_ghost.get("compression_type") != "unknown":
             details["jpeg_ghost"] = {
                 "ghost_score": jpeg_ghost.get("ghost_score", 0),
