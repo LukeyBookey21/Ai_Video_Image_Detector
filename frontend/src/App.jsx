@@ -6,6 +6,7 @@ import History from './components/History'
 import FAQ from './components/FAQ'
 import SpotFakesTips from './components/SpotFakesTips'
 import Waitlist from './components/Waitlist'
+import Feedback from './components/Feedback'
 
 const HISTORY_KEY = 'ai-detector-history'
 
@@ -95,9 +96,10 @@ export default function App() {
         {result && (
           <div className="mt-6">
             <ResultCard result={result} />
+            <Feedback key={result.filename + result.ai_probability} />
             <button
               onClick={() => { setResult(null); setError(null) }}
-              className="mt-4 w-full py-3 text-sm text-gray-400 hover:text-white border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
+              className="mt-2 w-full py-3 text-sm text-gray-400 hover:text-white border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
             >
               Check another file
             </button>
@@ -149,8 +151,9 @@ export default function App() {
         <Waitlist />
       </main>
 
-      <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900">
-        AI Detector v2.0 — No detection tool is perfect. Always use your own judgement.
+      <footer className="text-center py-6 text-xs text-gray-600 border-t border-gray-900 space-y-1">
+        <p>AI Detector v2.0 — No detection tool is perfect. Always use your own judgement.</p>
+        <p><a href="/privacy" className="text-gray-500 hover:text-gray-300 transition-colors">Privacy Policy</a></p>
       </footer>
     </div>
   )
