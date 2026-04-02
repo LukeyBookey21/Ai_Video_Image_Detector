@@ -28,6 +28,18 @@ export default function App() {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20))) } catch {}
   }, [history])
 
+  // Escape key clears results
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape' && result) {
+        setResult(null)
+        setError(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [result])
+
   const handleResult = (res) => {
     setResult(res)
     if (res) {
@@ -65,7 +77,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-950">
       <Header />
 
-      <main className="max-w-3xl mx-auto px-6 py-10">
+      <main id="main-content" className="max-w-3xl mx-auto px-6 py-10">
         {/* Hero */}
         <div className="text-center mb-10">
           <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-3">
