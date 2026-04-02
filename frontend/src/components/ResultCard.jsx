@@ -103,7 +103,10 @@ export default function ResultCard({ result }) {
           <p className={`text-base sm:text-lg md:text-xl ${
             isUncertain ? 'text-yellow-300/80' : isAI ? 'text-red-300/80' : 'text-green-300/80'
           }`}>
-            {getConfidencePhrase(confidence, isAI)}
+            {confidencePhrase}
+          </p>
+          <p className="text-xs text-gray-500 mt-3">
+            This is an automated check, not a definitive answer. Use your own judgement.
           </p>
         </div>
 

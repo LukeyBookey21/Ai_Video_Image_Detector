@@ -4,6 +4,7 @@ import Upload from './components/Upload'
 import ResultCard from './components/ResultCard'
 import History from './components/History'
 import FAQ from './components/FAQ'
+import SpotFakesTips from './components/SpotFakesTips'
 import Waitlist from './components/Waitlist'
 
 const HISTORY_KEY = 'ai-detector-history'
@@ -94,6 +95,12 @@ export default function App() {
         {result && (
           <div className="mt-6">
             <ResultCard result={result} />
+            <button
+              onClick={() => { setResult(null); setError(null) }}
+              className="mt-4 w-full py-3 text-sm text-gray-400 hover:text-white border border-gray-800 hover:border-gray-600 rounded-xl transition-colors"
+            >
+              Check another file
+            </button>
           </div>
         )}
 
@@ -112,6 +119,9 @@ export default function App() {
             detection_mode: 'history',
           })
         }} />
+
+        {/* Spot fakes tips */}
+        <SpotFakesTips />
 
         {/* How it works */}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">

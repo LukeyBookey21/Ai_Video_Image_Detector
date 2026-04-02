@@ -163,6 +163,26 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
     }
   }, [handleFile])
 
+  // Support Ctrl+V paste from clipboard
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) handleFile(file)
+        return
+      }
+    }
+  }, [handleFile])
+
+  // Listen for paste events globally
+  React.useEffect(() => {
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [handlePaste])
+
   const reset = () => {
     setPreview(null)
     setFileName('')
@@ -238,6 +258,11 @@ export default function Upload({ onResult, onError, isLoading, setIsLoading }) {
                   <p className="text-sm text-gray-500 mt-1">
                     JPEG, PNG, WebP, MP4, AVI, MOV, WebM — up to 50 MB
                   </p>
+                  {!isTouchDevice && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      You can also paste an image with Ctrl+V
+                    </p>
+                  )}
                 </div>
               </div>
             )}

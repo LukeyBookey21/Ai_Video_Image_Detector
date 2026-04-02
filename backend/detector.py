@@ -639,6 +639,27 @@ class MetadataAnalyzer:
             scores.append(0.08)
             metadata_flags.append("dimensions_divisible_64")
 
+        # ── JPEG Quantization Table Analysis ──
+        if img_format == "JPEG":
+            try:
+                # Real cameras use custom quantization tables
+                # Standard/generic tables suggest non-camera origin
+                qtables = image.quantization
+                if qtables:
+                    # Camera JPEGs typically have 2 tables with varied values
+                    # Standard JPEG table starts with [16, 11, 10, 16, 24, ...]
+                    table0 = list(qtables.get(0, []))
+                    if table0 and table0[0] == 16 and table0[1] == 11:
+                        # Standard quantization table — not from a camera
+                        scores.append(0.08)
+                        metadata_flags.append("standard_jpeg_qtable")
+                    elif table0 and has_camera_info:
+                        # Custom table + camera info = very likely real
+                        scores.append(-0.08)
+                        metadata_flags.append("camera_jpeg_qtable")
+            except Exception:
+                pass
+
         # ── Compression Analysis ──
         if raw_bytes:
             file_size = len(raw_bytes)
@@ -649,7 +670,7 @@ class MetadataAnalyzer:
             if img_format == "PNG" and bits_per_pixel > 15:
                 scores.append(0.08)
 
-            # JPEG with standard quantization from camera = real
+            # JPEG with normal compression from camera = real
             if img_format == "JPEG" and 1.0 < bits_per_pixel < 8.0:
                 scores.append(-0.05)
 
