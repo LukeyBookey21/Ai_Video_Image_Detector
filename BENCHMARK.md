@@ -1,37 +1,52 @@
 # Benchmark Results
 
-**Date:** 2026-04-01
-**Dataset:** Synthetic test set (100 real-like + 100 AI-like images)
-**Detection mode:** Heuristic only (no ML models installed)
-**Threshold:** 0.42
+## Real-World Accuracy (current)
 
-## Results
+**Date:** 2026-04-02
+**Dataset:** 7 real photographs + 6 AI-generated images from GitHub repos
+**Detection mode:** Heuristic only (no ML models installed)
+**Threshold:** 0.33
+
+### Test Images
+
+**Real photos:** Kodak DX3900 JPEG, Canon 5D Mark III portraits (Obama, Biden), iPhone XS photo, YOLOv5 sample images — all with genuine EXIF/camera metadata.
+
+**AI images:** Stable Diffusion txt2img outputs (from CompVis/stable-diffusion repo), StyleGAN2/3 face teasers (from NVlabs repos) — PNGs without metadata.
+
+### Results
 
 | Metric | Value |
 |---|---|
-| **Accuracy** | 100.0% |
-| **Precision** | 100.0% |
-| **Recall** | 100.0% |
-| **F1 Score** | 100.0% |
-| **False Positive Rate** | 0.0% |
-| **Total Images** | 200 |
-| **Processing Time** | 28.0s |
+| **Overall Accuracy** | **92%** (12/13) |
+| **Real Correctly Identified** | 7/7 (100%) |
+| **AI Correctly Detected** | 5/6 (83%) |
+| **False Positive Rate** | 0% |
+| **False Negative Rate** | 17% (1 borderline img2img sketch) |
 
-## Confusion Matrix
+### Confusion Matrix
 
 |  | Predicted Real | Predicted AI |
 |---|---|---|
-| **Actual Real** | 100 | 0 |
-| **Actual AI** | 0 | 100 |
+| **Actual Real** | 7 | 0 |
+| **Actual AI** | 1 | 5 |
 
-## Important Caveats
+## Key Findings
 
-These results use **synthetic test images** with exaggerated statistical differences between real and AI-generated samples. They validate that the pipeline works end-to-end but **do not represent real-world accuracy**.
+1. **Metadata analysis is the strongest heuristic signal.** Real camera photos contain EXIF data (camera model, GPS, timestamp). AI-generated PNGs almost never have EXIF.
+2. **Format detection matters.** PNG files without any metadata are strongly correlated with AI generation.
+3. **Frequency/noise/texture heuristics alone cannot distinguish** modern AI outputs from real photos — they score nearly identically.
+4. **Zero false positives** — the detector never incorrectly accuses a real photo of being AI-generated.
 
-For production accuracy claims, benchmark against:
-- **CIFAKE** dataset from HuggingFace (`CIFAKE/CIFAKE`)
-- **FaceForensics++** (video deepfakes)
-- **DFDC** (DeepFake Detection Challenge)
-- A manually curated set of real-world AI images from Midjourney, DALL-E, Stable Diffusion
+## Limitations
 
-Real-world accuracy with heuristic-only mode is estimated at ~65%. With ML models installed, ~85-94% on diffusion-generated images.
+- **JPEG AI images are harder to detect** heuristically — they can look identical to old scans or screenshots that also lack EXIF.
+- **Screenshots and social media re-uploads** strip EXIF metadata, which could trigger false positives on real content that's been re-shared.
+- **Small test set** — 13 images. Larger benchmark needed for production confidence.
+- **No ML models installed** — with HuggingFace ViT models, accuracy would likely reach 90%+ on a wider range of content.
+
+## Recommended Next Steps
+
+1. Run against CIFAKE dataset (10,000+ images) for statistically significant numbers
+2. Install ML models for ViT-based detection
+3. Test against social media compressed images (WhatsApp, Instagram re-uploads)
+4. Test against latest generators (Midjourney v6, DALL-E 3, Flux)

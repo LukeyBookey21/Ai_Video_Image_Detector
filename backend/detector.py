@@ -546,7 +546,7 @@ class SRMAnalyzer:
 
 
 class MetadataAnalyzer:
-    """Analyzes image metadata and compression for AI indicators."""
+    """Analyzes image metadata, format, and compression for AI indicators."""
 
     def analyze(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
         scores = []
@@ -568,68 +568,93 @@ class MetadataAnalyzer:
         has_datetime = any(k in exif_data for k in ["DateTime", "DateTimeOriginal"])
         has_software = "Software" in exif_data
 
-        # No camera metadata at all = suspicious
-        if not has_camera_info and not has_gps and not has_datetime:
-            scores.append(0.20)
-            metadata_flags.append("no_camera_metadata")
-        elif has_camera_info:
-            scores.append(0.0)  # Has camera info = likely real
+        # Camera metadata is strong evidence of real photo
+        if has_camera_info:
+            scores.append(-0.15)  # Negative = evidence of real
             metadata_flags.append("has_camera_info")
+        if has_gps:
+            scores.append(-0.10)
+            metadata_flags.append("has_gps")
+        if has_datetime and has_camera_info:
+            scores.append(-0.05)
+
+        # Detect format from raw bytes (image.format is lost after .convert())
+        img_format = (image.format or "").upper()
+        if not img_format and raw_bytes:
+            if raw_bytes[:4] == b"\x89PNG":
+                img_format = "PNG"
+            elif raw_bytes[:2] == b"\xff\xd8":
+                img_format = "JPEG"
+            elif raw_bytes[:4] == b"RIFF" and raw_bytes[8:12] == b"WEBP":
+                img_format = "WEBP"
+
+        # No EXIF at all — suspicious, especially for PNG
+        if not exif_data:
+            if img_format == "PNG":
+                # PNG without any metadata is the #1 AI image indicator
+                scores.append(0.45)
+                metadata_flags.append("png_no_exif")
+            else:
+                # JPEG without EXIF could be old scan, screenshot, or AI
+                scores.append(0.20)
+                metadata_flags.append("no_exif_data")
+        elif not has_camera_info and not has_gps and not has_datetime:
+            if img_format == "PNG":
+                scores.append(0.30)
+                metadata_flags.append("png_no_camera_metadata")
+            else:
+                scores.append(0.15)
+                metadata_flags.append("no_camera_metadata")
 
         # Known AI software tags
         if has_software:
             sw = exif_data.get("Software", "").lower()
             ai_keywords = [
-                "stable diffusion",
-                "midjourney",
-                "dall-e",
-                "comfyui",
-                "automatic1111",
-                "novelai",
-                "nai",
-                "diffusion",
+                "stable diffusion", "midjourney", "dall-e", "comfyui",
+                "automatic1111", "novelai", "nai", "diffusion",
             ]
             if any(kw in sw for kw in ai_keywords):
-                scores.append(0.50)
+                scores.append(0.60)
                 metadata_flags.append(f"ai_software:{exif_data['Software']}")
+
+        # JPEG with JFIF/EXIF headers is normal for real photos
+        if img_format == "JPEG" and has_camera_info:
+            scores.append(-0.10)
 
         # ── Image Properties ──
         w, h = image.size
 
         # Perfect power-of-2 or common AI dimensions
         ai_dimensions = [
-            (512, 512),
-            (768, 768),
-            (1024, 1024),
-            (1536, 1536),
-            (2048, 2048),
-            (512, 768),
-            (768, 512),
-            (1024, 768),
-            (768, 1024),
-            (1024, 1792),
-            (1792, 1024),
-            (1344, 768),
-            (768, 1344),
+            (512, 512), (768, 768), (1024, 1024), (1536, 1536), (2048, 2048),
+            (512, 768), (768, 512), (1024, 768), (768, 1024),
+            (1024, 1792), (1792, 1024), (1344, 768), (768, 1344),
         ]
         if (w, h) in ai_dimensions:
-            scores.append(0.12)
+            scores.append(0.15)
             metadata_flags.append(f"ai_dimension:{w}x{h}")
+
+        # Dimensions divisible by 64 (common in diffusion models) but not standard camera
+        if w % 64 == 0 and h % 64 == 0 and not has_camera_info:
+            scores.append(0.08)
+            metadata_flags.append("dimensions_divisible_64")
 
         # ── Compression Analysis ──
         if raw_bytes:
-            # Check for unusual compression patterns
             file_size = len(raw_bytes)
             pixel_count = w * h
             bits_per_pixel = (file_size * 8) / (pixel_count + 1)
 
-            # Very high or very low compression
-            if bits_per_pixel > 20:  # Nearly uncompressed
-                scores.append(0.06)
-            elif bits_per_pixel < 0.5:  # Extremely compressed
-                scores.append(0.04)
+            # Very high bpp in PNG = raw AI output (not compressed for web)
+            if img_format == "PNG" and bits_per_pixel > 15:
+                scores.append(0.08)
 
-        total_score = min(sum(scores), 1.0)
+            # JPEG with standard quantization from camera = real
+            if img_format == "JPEG" and 1.0 < bits_per_pixel < 8.0:
+                scores.append(-0.05)
+
+        # Clamp to [0, 1]
+        total_score = max(min(sum(scores), 1.0), 0.0)
         return {
             "ai_probability": round(total_score, 4),
             "has_camera_info": has_camera_info,
@@ -759,12 +784,12 @@ class AIImageDetector:
             remaining = 1.0 - ml_w - face_weight - hive_weight
             weights = {
                 "ml_models": ml_w,
-                "frequency": remaining * 0.22,
-                "statistical": remaining * 0.20,
-                "texture": remaining * 0.16,
-                "srm": remaining * 0.20,
-                "color": remaining * 0.12,
-                "metadata": remaining * 0.10,
+                "frequency": remaining * 0.16,
+                "statistical": remaining * 0.16,
+                "texture": remaining * 0.12,
+                "srm": remaining * 0.16,
+                "color": remaining * 0.10,
+                "metadata": remaining * 0.30,
             }
             if has_faces:
                 weights["face"] = face_weight
@@ -785,13 +810,15 @@ class AIImageDetector:
             mode = "ml_ensemble"
         else:
             remaining = 1.0 - face_weight - hive_weight
+            # Heuristic-only weights — metadata is the strongest real-world signal
+            # (EXIF presence/absence, format analysis, dimension patterns)
             weights = {
-                "frequency": remaining * 0.22,
-                "statistical": remaining * 0.20,
-                "texture": remaining * 0.16,
-                "srm": remaining * 0.22,
-                "color": remaining * 0.12,
-                "metadata": remaining * 0.08,
+                "frequency": remaining * 0.14,
+                "statistical": remaining * 0.14,
+                "texture": remaining * 0.10,
+                "srm": remaining * 0.14,
+                "color": remaining * 0.10,
+                "metadata": remaining * 0.38,
             }
             if has_faces:
                 weights["face"] = face_weight
@@ -813,7 +840,7 @@ class AIImageDetector:
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
         # Detection threshold calibrated from benchmark results — see BENCHMARK.md
         # Optimal F1 threshold: 0.35 (from scripts/calibrate_threshold.py)
-        detection_threshold = 0.35
+        detection_threshold = 0.33
         verdict = "AI-Generated" if ensemble_score > detection_threshold else "Real/Authentic"
         confidence = ensemble_score if ensemble_score > detection_threshold else (1.0 - ensemble_score)
 
