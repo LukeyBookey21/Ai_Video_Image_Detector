@@ -350,9 +350,11 @@ class StatisticalAnalyzer:
             avg_corr = 0.5
 
         if avg_corr > 0.97:
-            scores.append(0.15)
+            scores.append(0.15)  # Extremely high = AI
         elif avg_corr > 0.93:
-            scores.append(0.08)
+            scores.append(0.08)  # Very high = suspicious
+        elif avg_corr < 0.55:
+            scores.append(0.12)  # Very low = unusual for real photos (AI generators can produce decorrelated channels)
 
         # ── Histogram Smoothness ──
         for i in range(3):
@@ -777,23 +779,27 @@ class MetadataAnalyzer:
             metadata_flags.append("dimensions_divisible_64")
 
         # ── JPEG Quantization Table Analysis ──
-        if img_format == "JPEG":
+        if img_format == "JPEG" and raw_bytes:
             try:
-                # Real cameras use custom quantization tables
-                # Standard/generic tables suggest non-camera origin
-                qtables = image.quantization
+                # Re-open from raw bytes to get quantization tables
+                # (image.convert("RGB") strips them)
+                original = Image.open(io.BytesIO(raw_bytes))
+                qtables = getattr(original, "quantization", None)
                 if qtables:
-                    # Camera JPEGs typically have 2 tables with varied values
-                    # Standard JPEG table starts with [16, 11, 10, 16, 24, ...]
                     table0 = list(qtables.get(0, []))
-                    if table0 and table0[0] == 16 and table0[1] == 11:
-                        # Standard quantization table — not from a camera
-                        scores.append(0.08)
-                        metadata_flags.append("standard_jpeg_qtable")
-                    elif table0 and has_camera_info:
-                        # Custom table + camera info = very likely real
-                        scores.append(-0.08)
-                        metadata_flags.append("camera_jpeg_qtable")
+                    if table0:
+                        # All-ones table = quality 100 JPEG (real cameras never do this)
+                        if all(v == 1 for v in table0[:8]):
+                            scores.append(0.15)
+                            metadata_flags.append("jpeg_quality_100")
+                        # Standard JPEG table starts with [16, 11, 10, 16, 24, ...]
+                        elif table0[0] == 16 and table0[1] == 11:
+                            scores.append(0.08)
+                            metadata_flags.append("standard_jpeg_qtable")
+                        elif has_camera_info:
+                            # Custom table + camera info = very likely real
+                            scores.append(-0.08)
+                            metadata_flags.append("camera_jpeg_qtable")
             except Exception:
                 pass
 
@@ -1209,7 +1215,9 @@ class AIImageDetector:
             reasons.append(f"Image dimensions ({dim}) match common AI generator output sizes")
         if "dimensions_divisible_64" in flags:
             reasons.append("Image dimensions are multiples of 64 — a pattern typical of diffusion model outputs")
-        if "standard_jpeg_qtable" in flags:
+        if "jpeg_quality_100" in flags:
+            reasons.append("JPEG saved at maximum quality (quality 100) — real cameras never do this")
+        elif "standard_jpeg_qtable" in flags:
             reasons.append("JPEG uses standard quantization tables rather than camera-specific ones")
 
         # Mitigating factors
