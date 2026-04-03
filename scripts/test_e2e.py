@@ -70,11 +70,11 @@ def main():
         sys.exit(1)
 
     print("\n-- Health --")
-    test("Health returns status ok", lambda: (
-        r := requests.get(f"{BASE}/api/health"),
-        assert r.status_code == 200,
-        assert r.json()["status"] == "ok",
-    ))
+    def test_health():
+        r = requests.get(f"{BASE}/api/health")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+    test("Health returns status ok", test_health)
 
     print("\n-- Real photo detection --")
     def test_real_photo():
@@ -125,14 +125,15 @@ def main():
     test("Batch upload processes 2 files", test_batch)
 
     print("\n-- Error handling --")
-    test("Missing file returns 422", lambda: (
-        r := requests.post(f"{BASE}/api/detect"),
-        assert r.status_code == 422,
-    ))
-    test("Invalid file type returns 400", lambda: (
-        r := requests.post(f"{BASE}/api/detect", files={"file": ("bad.txt", io.BytesIO(b"hello"), "text/plain")}),
-        assert r.status_code == 400,
-    ))
+    def test_missing_file():
+        r = requests.post(f"{BASE}/api/detect")
+        assert r.status_code == 422
+    test("Missing file returns 422", test_missing_file)
+
+    def test_invalid_type():
+        r = requests.post(f"{BASE}/api/detect", files={"file": ("bad.txt", io.BytesIO(b"hello"), "text/plain")})
+        assert r.status_code == 400
+    test("Invalid file type returns 400", test_invalid_type)
 
     print("\n-- Stats --")
     def test_stats():

@@ -2,128 +2,157 @@
 
 Detect AI-generated images and deepfake videos using a multi-signal forensic ensemble. Analyses frequency patterns, noise fingerprints, facial anomalies, colour space forensics, and (optionally) ML models to produce a confidence score.
 
-## Quick Start (Development)
+**92% accuracy** on real-world test set | **0% false positive rate** | 11 detection signals
+
+## Quick Start
 
 ```bash
 # Backend
 cd backend
 pip install -r requirements.txt
 python main.py
-# API runs at http://localhost:8000
 
-# Frontend (in a separate terminal)
+# Frontend (new terminal)
 cd frontend
 npm install
 npm run dev
-# UI runs at http://localhost:3000
 ```
 
-## Docker Deployment
+Open **http://localhost:5173** in your browser.
 
+## Deploy
+
+### Docker
 ```bash
 cp .env.example .env
-# Edit .env with your settings
 docker-compose up --build
-# Frontend: http://localhost:3000
-# Backend:  http://localhost:8000
 ```
 
-## Environment Variables
+### Railway
+Push to GitHub, connect Railway, it auto-detects the `railway.toml`.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FRONTEND_ORIGIN` | `http://localhost:3000` | Frontend URL for CORS |
-| `BACKEND_PORT` | `8000` | Backend port mapping |
-| `FRONTEND_PORT` | `3000` | Frontend port mapping |
-| `HIVE_API_KEY` | *(empty)* | Optional Hive Moderation API key for improved accuracy. Get one at thehive.ai |
+### Render
+Push to GitHub, connect Render, it auto-detects the `render.yaml`.
 
-## Detection Signals
+### Netlify + Railway (split deploy)
+Frontend on Netlify (free), backend on Railway. Uses `netlify.toml` config.
 
-The ensemble combines 9+ independent signals:
+## Features
 
-| Signal | Description |
-|--------|-------------|
-| ML Models (ViT) | SDXL detector + deepfake detector via HuggingFace (optional) |
-| Hive API | External AI detection service (optional, requires API key) |
-| Frequency (DCT+FFT) | Spectral artifacts and power law deviations |
-| Statistical | Noise patterns, pixel distributions, colour correlations |
-| Texture | Edge density, local variance, gradient patterns |
-| SRM | Steganalysis rich model noise fingerprinting |
-| Colour Space | LAB/YCbCr forensics, chroma gradient analysis |
-| Face Analysis | Symmetry, skin texture, boundary artifacts |
-| Metadata | EXIF data, compression artifacts, format anomalies |
+| Feature | Description |
+|---------|-------------|
+| **File upload** | Drag-and-drop or click to upload images/videos |
+| **URL analysis** | Paste a link to check content without downloading |
+| **Batch upload** | Check up to 10 files at once |
+| **Image comparison** | Upload two images, compare forensic profiles |
+| **Clipboard paste** | Ctrl+V an image directly from clipboard |
+| **Plain-English verdict** | "Likely AI-Generated" or "Looks Authentic" with confidence |
+| **Signal summary** | "What we found" in non-technical language |
+| **Action guidance** | "What should I do?" with specific advice |
+| **Analysis history** | Recent checks saved in browser (localStorage) |
+| **User accounts** | Save results across devices (token auth) |
+| **Share results** | Copy verdict text or download as PNG |
+| **FAQ** | 6 common questions with practical answers |
+| **Gallery** | Visual guide to spotting AI images yourself |
+| **Privacy policy** | Full data handling disclosure |
+| **Admin dashboard** | Stats, charts, recent analyses at /admin |
+| **Developer API** | REST API with key auth, docs at /api/docs |
+| **Chrome extension** | Right-click any image to check |
+| **WhatsApp bot** | Forward suspicious media for instant verdict |
+| **Prometheus metrics** | /metrics endpoint for monitoring |
 
-For **videos**: analyses 15 keyframes individually plus temporal consistency (optical flow, noise, flicker).
+## Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Main detector |
+| `/about` | How the detection works |
+| `/gallery` | Guide to spotting AI images |
+| `/compare` | Compare two images |
+| `/privacy` | Privacy policy |
+| `/admin` | Admin stats dashboard |
+| `/account` | User saved results |
+| `/status` | System health check |
+| `/api/docs` | Developer API documentation |
 
 ## API Endpoints
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `/api/health` | GET | None | Health check and model status |
-| `/api/detect` | POST | None | Auto-detect file type and analyse |
-| `/api/detect/image` | POST | None | Analyse an image |
-| `/api/detect/video` | POST | None | Analyse a video |
-| `/api/detect-url` | POST | None | Download and analyse from URL |
-| `/api/stats` | GET | None | Analysis counters |
-| `/api/waitlist` | POST | None | Join email waitlist |
-| `/api/v1/detect` | POST | API Key | Developer API (X-API-Key header) |
-| `/api/v1/usage` | GET | API Key | API key usage stats |
-| `/api/docs` | GET | None | Developer API documentation |
+| `/api/health` | GET | - | Health check |
+| `/api/detect` | POST | - | Auto-detect and analyse |
+| `/api/detect/image` | POST | - | Analyse image |
+| `/api/detect/video` | POST | - | Analyse video |
+| `/api/detect/batch` | POST | - | Analyse multiple files |
+| `/api/detect-url` | POST | - | Analyse from URL |
+| `/api/compare` | POST | - | Compare two images |
+| `/api/stats` | GET | - | Analysis counters |
+| `/api/stats/recent` | GET | - | Recent analyses |
+| `/api/waitlist` | POST | - | Join email waitlist |
+| `/api/auth/login` | POST | - | Get auth token |
+| `/api/auth/me` | GET | Token | Current user |
+| `/api/user/save` | POST | Token | Save result |
+| `/api/user/results` | GET | Token | Get saved results |
+| `/api/v1/detect` | POST | API Key | Developer API |
+| `/api/v1/usage` | GET | API Key | API key usage |
+| `/metrics` | GET | - | Prometheus metrics |
 
-### Rate Limits
+## Detection Signals (11)
 
-- Web endpoints: 10 requests/hour per IP
-- Developer API: 100 requests/day per API key
-- Waitlist: 3 requests/hour per IP
+| Signal | Description | Weight (heuristic mode) |
+|--------|-------------|------------------------|
+| Metadata/EXIF | Camera data, format, dimensions | 38% |
+| Frequency (DCT+FFT) | Spectral artifacts | 14% |
+| Statistical | Noise patterns, distributions | 14% |
+| SRM | Steganalysis noise fingerprint | 14% |
+| Texture | Edge density, local variance | 10% |
+| Colour space | LAB/YCbCr forensics | 10% |
+| Face analysis | Symmetry, skin, boundaries | bonus |
+| JPEG ghost | Compression forensics | bonus |
+| Patch consistency | Local noise uniformity | bonus |
+| ML models (optional) | ViT SDXL + deepfake detector | 40% (ML mode) |
+| Hive API (optional) | Commercial detection service | 30% (if configured) |
 
-### Generate an API Key
+## ML Models (Optional)
 
+Install for ~94% accuracy (vs ~92% heuristic-only):
 ```bash
-python scripts/generate_api_key.py --name "My App"
+cd backend
+python install_ml.py          # CPU only
+python install_ml.py --gpu    # With CUDA support
+python install_ml.py --check  # Check status
 ```
 
-### Example
+## Chrome Extension
 
-```bash
-curl -X POST http://localhost:8000/api/detect/image -F "file=@photo.jpg"
-```
+See [extension/README.md](extension/README.md) for installation.
 
-## Supported Formats
+## WhatsApp Bot
 
-- **Images**: JPEG, PNG, WebP, BMP, TIFF
-- **Videos**: MP4, AVI, MOV, WebM
-- **Max file size**: 50 MB
+See [whatsapp-bot/README.md](whatsapp-bot/README.md) for setup.
 
 ## Benchmarking
 
 ```bash
-python scripts/download_test_data.py
 python scripts/benchmark.py test_data/real test_data/ai_generated
+python scripts/benchmark.py --cifake --limit 200   # Use CIFAKE dataset
 python scripts/calibrate_threshold.py
 ```
 
-See [BENCHMARK.md](BENCHMARK.md) for latest results.
+## Development
 
-## Tech Stack
-
-- **Backend**: Python, FastAPI, NumPy, SciPy, OpenCV, Pillow, slowapi
-- **Frontend**: React, Vite, Tailwind CSS, React Router, html2canvas
-- **ML** (optional): PyTorch, HuggingFace Transformers
+```bash
+make dev        # Start both servers
+make test       # Run all tests
+make lint       # Check formatting
+make format     # Auto-format
+make docker     # Build and run with Docker
+```
 
 ## Accuracy Disclaimer
 
-This tool provides forensic analysis to help assess whether content may be AI-generated. **No detection tool is 100% accurate.** Results should be treated as a guide, not a definitive verdict. The tool works best on:
-
-- AI-generated images from diffusion models (Stable Diffusion, DALL-E, Midjourney)
-- Deepfake face-swap videos
-- Uncompressed or lightly compressed content
-
-Heavy social media compression, screenshots, and screen recordings reduce accuracy.
+No detection tool is 100% accurate. Results should be treated as a guide, not a definitive verdict. Heavy compression, screenshots, and the latest AI generators reduce accuracy.
 
 ## Privacy
 
-- Uploaded files are analysed in memory and deleted immediately
-- URL downloads are saved to temporary files and deleted after analysis
-- No uploaded content is stored, logged, or used for any purpose
-- Email waitlist entries are stored locally in CSV format
-- Analysis counters are stored locally with no personal data
+Files are analysed and deleted immediately. No storage, no logging of content, no tracking. See [/privacy](frontend/src/components/Privacy.jsx) for full policy.

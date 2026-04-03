@@ -1,5 +1,6 @@
 /* Header — app branding and backend status indicator */
 import React, { useState, useEffect } from 'react'
+import AccountButton from './AccountButton'
 
 export default function Header() {
   const [health, setHealth] = useState(null)
@@ -30,7 +31,8 @@ export default function Header() {
             <p className="text-xs text-gray-400 hidden sm:block">Image & Video Analysis</p>
           </div>
         </a>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <AccountButton />
           {health ? (
             <span className={`inline-flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-medium border ${
               mlActive

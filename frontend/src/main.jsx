@@ -8,6 +8,7 @@ import Compare from './components/Compare.jsx'
 import Gallery from './components/Gallery.jsx'
 import Privacy from './components/Privacy.jsx'
 import Status from './components/Status.jsx'
+import Account from './components/Account.jsx'
 import NotFound from './components/NotFound.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
@@ -24,6 +25,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/status" element={<Status />} />
+        <Route path="/account" element={<Account />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

@@ -75,6 +75,28 @@ def init_db():
                 confidence REAL,
                 ai_probability REAL,
                 processing_time REAL,
+                created_at TEXT NOT NULL,
+                user_id INTEGER REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                display_name TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS saved_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                filename TEXT,
+                file_type TEXT,
+                verdict TEXT,
+                confidence REAL,
+                ai_probability REAL,
+                explanation TEXT,
                 created_at TEXT NOT NULL
             );
         """)
@@ -131,6 +153,58 @@ def add_to_waitlist(email: str, ip_hash: str) -> str:
             (email, ip_hash, datetime.utcnow().isoformat() + "Z"),
         )
         return "added"
+
+
+def create_user(email: str) -> dict:
+    """Create a new user with a magic link token. Returns user dict."""
+    token = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        existing = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            # Regenerate token for existing user (magic link re-auth)
+            conn.execute("UPDATE users SET token = ?, last_login = ? WHERE email = ?", (token, now, email))
+            return {"id": existing["id"], "email": email, "token": token, "new": False}
+        conn.execute(
+            "INSERT INTO users (email, token, created_at, last_login) VALUES (?, ?, ?, ?)",
+            (email, token, now, now),
+        )
+        user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": user_id, "email": email, "token": token, "new": True}
+
+
+def get_user_by_token(token: str) -> dict | None:
+    """Look up a user by their auth token."""
+    with get_db() as conn:
+        row = conn.execute("SELECT id, email, display_name, created_at FROM users WHERE token = ?", (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def save_result(user_id: int, filename: str, file_type: str, verdict: str, confidence: float, ai_probability: float, explanation: str) -> int:
+    """Save an analysis result for a user."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO saved_results (user_id, filename, file_type, verdict, confidence, ai_probability, explanation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, filename, file_type, verdict, confidence, ai_probability, explanation, datetime.utcnow().isoformat() + "Z"),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def get_user_results(user_id: int, limit: int = 50) -> list:
+    """Return saved results for a user."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, filename, file_type, verdict, confidence, ai_probability, explanation, created_at FROM saved_results WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_user_result(user_id: int, result_id: int) -> bool:
+    """Delete a saved result. Returns True if deleted."""
+    with get_db() as conn:
+        cursor = conn.execute("DELETE FROM saved_results WHERE id = ? AND user_id = ?", (result_id, user_id))
+        return cursor.rowcount > 0
 
 
 def get_recent_analyses(limit: int = 50) -> list:

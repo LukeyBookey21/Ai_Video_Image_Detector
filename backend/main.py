@@ -58,7 +58,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 from detector import detector as ai_detector
 from video_processor import get_video_processor
 from heatmap import generate_heatmap
-from database import init_db, update_stats, get_stats, add_to_waitlist, log_analysis, get_recent_analyses
+from database import (
+    init_db, update_stats, get_stats, add_to_waitlist, log_analysis, get_recent_analyses,
+    create_user, get_user_by_token, save_result, get_user_results, delete_user_result,
+)
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"}
 ALLOWED_VIDEO_TYPES = {"video/mp4", "video/avi", "video/quicktime", "video/x-msvideo", "video/webm"}
@@ -212,6 +215,90 @@ async def join_waitlist(request: Request, body: WaitlistRequest):
 
     status = add_to_waitlist(email, ip_hash)
     return {"status": status}
+
+
+# ── User Accounts (magic link auth) ─────────────────────────────────────────
+
+
+class AuthRequest(BaseModel):
+    email: str
+
+
+class SaveResultRequest(BaseModel):
+    filename: str
+    file_type: str
+    verdict: str
+    confidence: float
+    ai_probability: float
+    explanation: str = ""
+
+
+def _get_current_user(request: Request) -> dict:
+    """Extract and validate user from Authorization header."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated. Please log in.")
+    token = auth[7:]
+    user = get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+    return user
+
+
+@app.post("/api/auth/login")
+@limiter.limit("5/hour")
+async def auth_login(request: Request, body: AuthRequest):
+    """Generate a magic link token for the given email."""
+    import re
+
+    email = body.email.strip().lower()
+    if len(email) > 320 or not re.match(EMAIL_RE, email):
+        raise HTTPException(status_code=422, detail="Please enter a valid email address.")
+
+    user = create_user(email)
+    # In production, email the token as a magic link.
+    # For now, return it directly (development mode).
+    return {
+        "token": user["token"],
+        "email": email,
+        "new_user": user["new"],
+        "message": "In production, this token would be emailed as a magic link.",
+    }
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    """Return the current authenticated user."""
+    user = _get_current_user(request)
+    return {"id": user["id"], "email": user["email"], "display_name": user.get("display_name")}
+
+
+@app.post("/api/user/save")
+async def user_save_result(request: Request, body: SaveResultRequest):
+    """Save an analysis result to the user's account."""
+    user = _get_current_user(request)
+    result_id = save_result(
+        user["id"], body.filename, body.file_type, body.verdict,
+        body.confidence, body.ai_probability, body.explanation,
+    )
+    return {"id": result_id, "status": "saved"}
+
+
+@app.get("/api/user/results")
+async def user_get_results(request: Request):
+    """Return saved results for the authenticated user."""
+    user = _get_current_user(request)
+    return {"results": get_user_results(user["id"])}
+
+
+@app.delete("/api/user/results/{result_id}")
+async def user_delete_result(request: Request, result_id: int):
+    """Delete a saved result."""
+    user = _get_current_user(request)
+    deleted = delete_user_result(user["id"], result_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Result not found.")
+    return {"status": "deleted"}
 
 
 def _error(status: int, message: str, code: str):

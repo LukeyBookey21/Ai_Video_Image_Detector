@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: ai-detector-backend
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    envVars:
+      - key: FRONTEND_ORIGIN
+        value: https://ai-detector.onrender.com
+      - key: WORKERS
+        value: "2"
+    healthCheckPath: /api/health
+    plan: starter
+
+  - type: web
+    name: ai-detector-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://ai-detector-backend.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
