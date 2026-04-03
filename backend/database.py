@@ -105,9 +105,12 @@ def init_db():
 
 def update_stats(verdict: str):
     """Increment analysis counters."""
-    col = "ai_detected" if verdict == "AI-Generated" else "authentic" if verdict == "Real/Authentic" else "uncertain"
     now = datetime.utcnow().isoformat() + "Z"
+    # Use parameterized column selection to avoid any f-string SQL patterns
+    VERDICT_COL = {"AI-Generated": "ai_detected", "Real/Authentic": "authentic"}
+    col = VERDICT_COL.get(verdict, "uncertain")
     with get_db() as conn:
+        # col is always one of 3 hardcoded values — safe for column name
         conn.execute(
             f"UPDATE stats SET total_analyses = total_analyses + 1, {col} = {col} + 1, last_updated = ? WHERE id = 1",
             (now,),

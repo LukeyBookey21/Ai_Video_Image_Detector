@@ -1,6 +1,9 @@
 // AI Detector Chrome Extension — background service worker
 
-const API_BASE = 'http://localhost:8000'; // Change to your deployed URL
+// Configure this to point to your deployed backend
+// For local development: http://localhost:8000
+// For production: https://your-backend.railway.app
+const API_BASE = 'http://localhost:8000';
 
 // Create right-click context menu
 chrome.runtime.onInstalled.addListener(() => {

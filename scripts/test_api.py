@@ -178,6 +178,62 @@ def main():
         400,
     )
 
+    print("\n-- Batch Upload --")
+    test(
+        "POST /api/detect/batch with 2 files",
+        requests.post(
+            f"{BASE}/api/detect/batch",
+            files=[
+                ("files", ("a.jpg", create_test_jpeg(), "image/jpeg")),
+                ("files", ("b.png", create_test_png(), "image/png")),
+            ],
+        ),
+        200,
+        '"total"',
+    )
+
+    print("\n-- Compare --")
+    test(
+        "POST /api/compare with 2 images",
+        requests.post(
+            f"{BASE}/api/compare",
+            files=[
+                ("file1", ("a.jpg", create_test_jpeg(), "image/jpeg")),
+                ("file2", ("b.png", create_test_png(), "image/png")),
+            ],
+        ),
+        200,
+        "comparison",
+    )
+
+    print("\n-- User Auth --")
+    test(
+        "POST /api/auth/login",
+        requests.post(f"{BASE}/api/auth/login", json={"email": f"test_{id(main)}@example.com"}),
+        200,
+        "token",
+    )
+    # Get token for subsequent tests
+    login_resp = requests.post(f"{BASE}/api/auth/login", json={"email": f"auth_test_{id(main)}@example.com"})
+    if login_resp.status_code == 200:
+        token = login_resp.json().get("token", "")
+        auth = {"Authorization": f"Bearer {token}"}
+        test("GET /api/auth/me", requests.get(f"{BASE}/api/auth/me", headers=auth), 200, "email")
+        test(
+            "POST /api/user/save",
+            requests.post(f"{BASE}/api/user/save", json={
+                "filename": "test.jpg", "file_type": "image", "verdict": "Real/Authentic",
+                "confidence": 85.0, "ai_probability": 15.0, "explanation": "Test",
+            }, headers=auth),
+            200,
+            "saved",
+        )
+        test("GET /api/user/results", requests.get(f"{BASE}/api/user/results", headers=auth), 200, "results")
+    test("GET /api/auth/me without token", requests.get(f"{BASE}/api/auth/me"), 401)
+
+    print("\n-- Metrics --")
+    test("GET /metrics (Prometheus)", requests.get(f"{BASE}/metrics"), 200, "ai_detector_analyses_total")
+
     print(f"\n{'=' * 55}")
     print(f"  Results: {PASS} passed, {FAIL} failed")
     print(f"{'=' * 55}")
