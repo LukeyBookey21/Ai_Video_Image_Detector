@@ -186,8 +186,10 @@ class VideoProcessor:
         elif dup_ratio > 0.15:
             scores.append(0.18)
 
-        # >50% near-duplicate frames = animation at low effective FPS
-        if near_dup_ratio > 0.50:
+        # Near-duplicate frames = animation at low effective FPS
+        if near_dup_ratio > 0.80:
+            scores.append(0.25)
+        elif near_dup_ratio > 0.50:
             scores.append(0.15)
 
         # ── Motion Blur Absence Detection ──
@@ -231,7 +233,9 @@ class VideoProcessor:
             avg_unique = np.mean(unique_colors_per_frame)
             # Real video at 64x64 with 16-level quantization: typically 200-800 unique colors
             # Animation with limited palette: typically 30-150 unique colors
-            if avg_unique < 100:
+            if avg_unique < 30:
+                scores.append(0.30)  # Extremely limited palette = definite animation
+            elif avg_unique < 100:
                 scores.append(0.15)
             elif avg_unique < 150:
                 scores.append(0.08)
@@ -413,8 +417,11 @@ class VideoProcessor:
 
         # If strong stop-motion/animation signals detected (frame duplication,
         # no motion blur, limited palette), boost temporal weight significantly
-        has_animation_signals = temporal.get("duplicate_frame_ratio", 0) > 0.15 or (
-            temporal.get("sharpness_cv", 1) < 0.05 and temporal.get("avg_unique_colors", 999) < 150
+        has_animation_signals = (
+            temporal.get("duplicate_frame_ratio", 0) > 0.15
+            or temporal.get("near_duplicate_ratio", 0) > 0.60
+            or temporal.get("avg_unique_colors", 999) < 20
+            or (temporal.get("sharpness_cv", 1) < 0.05 and temporal.get("avg_unique_colors", 999) < 150)
         )
 
         if has_animation_signals:
@@ -428,8 +435,10 @@ class VideoProcessor:
                 0.40 * avg_ai_score + 0.15 * max_ai_score + 0.20 * temporal_score_pct + 0.25 * (adv_score * 100)
             )
 
-        verdict = "AI-Generated" if combined_score > 42.0 else "Real/Authentic"
-        confidence = combined_score if combined_score > 42.0 else (100.0 - combined_score)
+        # Lower threshold when animation is detected (stronger signal)
+        threshold = 35.0 if has_animation_signals else 42.0
+        verdict = "AI-Generated" if combined_score > threshold else "Real/Authentic"
+        confidence = combined_score if combined_score > threshold else (100.0 - combined_score)
 
         explanation = self._generate_video_explanation(
             verdict,
