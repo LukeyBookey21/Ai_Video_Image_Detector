@@ -70,6 +70,15 @@ export default function SignalSummary({ details, result }) {
     })
   }
 
+  // Re-compression detected (JPEG ghost)
+  if (details.jpeg_ghost?.compression_type === 'double_jpeg') {
+    signals.push({
+      label: 'Re-compressed image',
+      description: 'This image has been re-saved or re-compressed (e.g. shared via WhatsApp or social media). This can reduce detection accuracy.',
+      level: 'medium',
+    })
+  }
+
   // Screenshot detection
   if (details.screenshot_detected) {
     signals.push({

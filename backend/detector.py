@@ -1044,7 +1044,6 @@ class AIImageDetector:
         else:
             remaining = 1.0 - face_weight - hive_weight
             # Heuristic-only weights — metadata is the strongest real-world signal
-            # (EXIF presence/absence, format analysis, dimension patterns)
             weights = {
                 "frequency": remaining * 0.14,
                 "statistical": remaining * 0.14,
@@ -1070,9 +1069,14 @@ class AIImageDetector:
             )
             mode = "heuristic_only"
 
-        # Add bonus signals (patch consistency, JPEG ghost) as small adjustments
+        # Add bonus signals as small adjustments
         ensemble_score += patch.get("ai_probability", 0) * 0.05
         ensemble_score += jpeg_ghost.get("ai_probability", 0) * 0.03
+
+        # JPEG ghost detection: high ghost score on a JPEG without EXIF = likely re-saved AI image
+        ghost_score = jpeg_ghost.get("ghost_score", 0)
+        if ghost_score > 0.3 and not meta.get("has_camera_info"):
+            ensemble_score += 0.04  # Re-compressed image without camera data
 
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
         # Detection threshold calibrated from benchmark results — see BENCHMARK.md
