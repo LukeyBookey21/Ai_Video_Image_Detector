@@ -143,6 +143,14 @@ export default function DetailedStats({ result }) {
             <StatRow label="File Size" value={result.file_size_mb} unit="MB" />
           </StatSection>
 
+          {/* ELA Analysis */}
+          {d.ela && (
+            <StatSection title="Error Level Analysis" icon="E">
+              <StatRow label="ELA Uniformity" value={(d.ela.uniformity * 100).toFixed(0) + '%'} warn={d.ela.uniformity > 0.7} />
+              <StatRow label="Mean Error" value={d.ela.mean_error} />
+            </StatSection>
+          )}
+
           {/* Temporal (video only) */}
           {result.temporal_analysis && (
             <StatSection title="Temporal Consistency" icon="T">
