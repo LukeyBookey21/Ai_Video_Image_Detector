@@ -99,8 +99,14 @@ export default function App() {
 
         {/* Error */}
         {error && (
-          <div className="mt-6 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-            {error}
+          <div className="mt-6 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm flex items-center justify-between">
+            <span className="text-red-400">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-400/60 hover:text-red-300 text-xs ml-4 shrink-0"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
