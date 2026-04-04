@@ -125,7 +125,7 @@ export default function ResultCard({ result }) {
         )}
 
         {/* Signal summary — plain English */}
-        <SignalSummary details={result.details} />
+        <SignalSummary details={result.details} result={result} />
 
         {/* What should I do? */}
         <div className="px-6 py-5 border-t border-gray-800/50 bg-gray-900/80">

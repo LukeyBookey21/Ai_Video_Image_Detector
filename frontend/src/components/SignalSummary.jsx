@@ -27,7 +27,7 @@ function getLevel(score) {
   return 'low'
 }
 
-export default function SignalSummary({ details }) {
+export default function SignalSummary({ details, result }) {
   if (!details) return null
 
   const signals = []
@@ -67,6 +67,15 @@ export default function SignalSummary({ details }) {
       label: 'Colour patterns',
       description: s >= 40 ? 'Colour distribution shows signs of AI generation' : 'Colour distribution looks natural',
       level: getLevel(s),
+    })
+  }
+
+  // Video-specific: animation detection
+  if (result?.temporal_analysis?.animation_detected) {
+    signals.push({
+      label: 'Animation detected',
+      description: 'This video shows signs of stop-motion animation or CGI — not real camera footage',
+      level: 'high',
     })
   }
 
