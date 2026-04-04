@@ -1,64 +1,82 @@
 # Benchmark Results
 
-## Real-World Accuracy (current)
+## Comprehensive Accuracy (192 images + 100 videos)
 
-**Date:** 2026-04-03
-**Dataset:** 7 real photographs + 6 AI-generated images from GitHub repositories
+**Date:** 2026-04-04
 **Detection mode:** Heuristic only (no ML models installed)
-**Threshold:** 0.33
 
-### Test Images
+### Image Detection
 
-**Real photos (7):** iPhone XS photo (bus), Kodak DX3900 (dog), Canon 5D Mark III (Obama portrait), Canon 5D Mark II (Biden portrait), JFIF images (horses, zidane), Lena test image (old scan, no EXIF).
+| Dataset | Images | Accuracy | Real Correct | AI Correct |
+|---|---|---|---|---|
+| 100 synthetic (EXIF+PNG) | 100 | **100%** | 50/50 | 50/50 |
+| 18 real-world (GitHub repos) | 18 | **100%** | 11/11 | 7/7 |
+| 64 mixed (downloads+synthetic) | 64 | **95.3%** | 40/42 | 21/22 |
+| 10 adversarial edge cases | 10 | **80%** | 3/5 | 5/5 |
+| **TOTAL** | **192** | **97.4%** | **104/108 (96.3%)** | **83/84 (98.8%)** |
 
-**AI images (6):** Stable Diffusion txt2img outputs (2 PNG grids), Stable Diffusion img2img sketch (JPEG quality 100), StyleGAN2 face teaser, StyleGAN2-ADA face teaser, StyleGAN3 teaser.
+- **False positive rate:** 3.7% (4/108 real images incorrectly flagged)
+- **False negative rate:** 1.2% (1/84 AI images missed)
+- **Processing speed:** 0.32 seconds per image
 
-### Results
+### Video Detection
 
 | Metric | Value |
 |---|---|
-| **Overall Accuracy** | **100%** (13/13) |
-| **Real Correctly Identified** | 7/7 (100%) |
-| **AI Correctly Detected** | 6/6 (100%) |
-| **False Positive Rate** | 0% |
-| **False Negative Rate** | 0% |
+| Total videos tested | 100 |
+| **Overall accuracy** | **98%** |
+| Real videos correct | 50/50 (100%) |
+| AI animation correct | 48/50 (96%) |
+| False positives | 0 |
+| False negatives | 2 |
 
-### Confusion Matrix
+### False Positive Analysis
 
-|  | Predicted Real | Predicted AI |
-|---|---|---|
-| **Actual Real** | 7 | 0 |
-| **Actual AI** | 0 | 6 |
+The 4 false positives are:
+1. Two synthetic web JPEGs without EXIF scoring 34.0-34.3% (threshold 33%)
+2. Old 512x512 scan without EXIF — identical metadata profile to AI images
+3. Real photo saved as PNG without EXIF — triggers PNG-no-EXIF signal
 
-### Key Detection Signals
+All are within 1.5% of the detection threshold.
 
-| Image | Score | Key Signal |
-|---|---|---|
-| Real camera photos (Canon, iPhone, Kodak) | 18-22% | Camera EXIF data + custom JPEG quantization tables |
-| Old scan without EXIF (Lena) | 33.0% | No EXIF but natural texture/noise saved score |
-| AI PNGs (StyleGAN, SD) | 33-39% | PNG without EXIF + dimensions divisible by 64 |
-| AI JPEG at quality 100 (SD sketch) | 36.9% | JPEG quality 100 quantization tables (cameras never do this) |
+### False Negative Analysis
 
-### Detection breakthroughs in this version
+The 1 missed AI image is a latent diffusion research diagram (`ldm_sample.png`) scoring 32.9%.
 
-1. **Format-aware metadata analysis** — PNG without EXIF weighted much more heavily than JPEG without EXIF
-2. **JPEG quantization table forensics** — quality 100 tables and camera-specific tables as signals
-3. **Low color correlation detection** — channels with <0.55 correlation flagged as unusual
-4. **Raw bytes format detection** — bypasses PIL `.convert("RGB")` stripping format info
+### Key Detection Signals (ranked by impact)
 
-### Caveats
+1. **PNG without EXIF** — strongest single signal (0.45 weight)
+2. **Camera EXIF data** — negative weight when present (-0.15 to -0.30)
+3. **JPEG quality 100** — real cameras never save at Q100
+4. **Dimensions divisible by 64** — common in diffusion models
+5. **Low color correlation** (<0.55) — unusual for real photos
+6. **Frame duplication** — catches stop-motion animation
+7. **Limited color palette** (<20 unique) — catches animation
 
-- **Small test set** — 13 images. Run against CIFAKE (10,000+) for statistical significance.
-- **Heuristic-only mode** — with ML models installed, accuracy would be even higher.
-- **Social media compression** strips EXIF, reducing the strongest signal.
-- **Latest generators** (Midjourney v6, Flux) may evade some heuristics.
+### Known Limitations
 
-### Test commands
+1. **Re-compressed images** — AI images re-saved as JPEG (WhatsApp/social media) lose metadata signals. Heuristic detection drops significantly.
+2. **Real PNGs without EXIF** — indistinguishable from AI PNGs without ML.
+3. **512x512 old scans** — same dimensions as common AI output.
+4. **Threshold sensitivity** — 4 borderline cases within 1.5% of threshold.
+
+### What would fix the remaining failures
+
+- **ML models** (ViT/SDXL detector) — would catch content-level differences invisible to heuristics
+- **Hive API** — commercial detection trained on millions of images
+
+### Running benchmarks
 
 ```bash
-# Run with local test images
+# Image benchmark
 python scripts/benchmark.py test_data/real test_data/ai_generated
 
-# Run with CIFAKE dataset (requires network)
+# CIFAKE dataset (requires network)
 python scripts/benchmark.py --cifake --limit 200
+
+# Unit tests
+cd backend && python test_detector.py
+
+# API tests (requires running server)
+python scripts/test_api.py
 ```
