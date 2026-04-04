@@ -18,6 +18,7 @@ import io
 import logging
 import os
 import struct
+import cv2
 import numpy as np
 from PIL import Image, ImageFilter
 from PIL.ExifTags import TAGS
@@ -547,6 +548,68 @@ class SRMAnalyzer:
         }
 
 
+class ScreenshotDetector:
+    """Detect screenshots and screen recordings.
+    Screenshots have: sharp pixel boundaries, UI elements, specific DPI, no camera noise."""
+
+    def analyze(self, image: Image.Image) -> dict:
+        try:
+            img = np.array(image.convert("RGB"))
+            h, w = img.shape[:2]
+
+            indicators = []
+
+            # 1. Check for perfectly horizontal/vertical sharp edges (UI elements)
+            gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY) if len(img.shape) == 3 else img
+            small = cv2.resize(gray, (min(w, 512), min(h, 512)))
+            edges_h = cv2.Sobel(small, cv2.CV_64F, 0, 1, ksize=3)
+            edges_v = cv2.Sobel(small, cv2.CV_64F, 1, 0, ksize=3)
+
+            # Screenshots have many perfectly horizontal/vertical edges
+            h_edge_ratio = np.sum(np.abs(edges_h) > 30) / (small.shape[0] * small.shape[1] + 1)
+            v_edge_ratio = np.sum(np.abs(edges_v) > 30) / (small.shape[0] * small.shape[1] + 1)
+
+            # High ratio of aligned edges = UI/screenshot
+            if h_edge_ratio > 0.15 and v_edge_ratio > 0.15:
+                indicators.append("ui_edges")
+
+            # 2. Check for solid-color rectangular regions (buttons, bars, backgrounds)
+            # Quantize and look for large uniform blocks
+            quantized = (img // 32) * 32
+            block_size = max(8, min(h, w) // 32)
+            uniform_blocks = 0
+            total_blocks = 0
+            for by in range(0, h - block_size, block_size):
+                for bx in range(0, w - block_size, block_size):
+                    block = quantized[by : by + block_size, bx : bx + block_size]
+                    if np.std(block) < 2:
+                        uniform_blocks += 1
+                    total_blocks += 1
+
+            uniform_ratio = uniform_blocks / (total_blocks + 1)
+            if uniform_ratio > 0.40:
+                indicators.append("uniform_blocks")
+
+            # 3. Check for common screenshot dimensions (phone screens, desktop)
+            screenshot_ratios = [16 / 9, 9 / 16, 4 / 3, 3 / 4, 19.5 / 9, 9 / 19.5]
+            aspect = w / h if h > 0 else 1
+            is_screen_ratio = any(abs(aspect - r) < 0.05 for r in screenshot_ratios)
+            # Common screen widths
+            is_screen_width = w in [320, 375, 390, 414, 428, 768, 1024, 1080, 1170, 1284, 1440, 1920, 2560, 3840]
+
+            if is_screen_ratio and is_screen_width:
+                indicators.append("screen_dimensions")
+
+            is_screenshot = len(indicators) >= 2
+            return {
+                "is_screenshot": is_screenshot,
+                "indicators": indicators,
+                "uniform_block_ratio": round(uniform_ratio, 3),
+            }
+        except Exception:
+            return {"is_screenshot": False, "indicators": [], "uniform_block_ratio": 0}
+
+
 class PatchConsistencyAnalyzer:
     """Analyze local noise consistency across image patches.
     Real photos have uniform sensor noise; AI images often have varying noise levels."""
@@ -842,6 +905,7 @@ class AIImageDetector:
         self.metadata_analyzer = MetadataAnalyzer()
         self.jpeg_ghost_analyzer = JPEGGhostAnalyzer()
         self.patch_analyzer = PatchConsistencyAnalyzer()
+        self.screenshot_detector = ScreenshotDetector()
 
         # Advanced analyzers
         from color_analysis import ColorSpaceAnalyzer
@@ -931,6 +995,7 @@ class AIImageDetector:
         face = self._sanitize_dict(self.face_analyzer.analyze(image_rgb))
         jpeg_ghost = self._sanitize_dict(self.jpeg_ghost_analyzer.analyze(image_rgb, raw_bytes))
         patch = self._sanitize_dict(self.patch_analyzer.analyze(image_rgb))
+        screenshot = self.screenshot_detector.analyze(image_rgb)
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -1084,6 +1149,9 @@ class AIImageDetector:
                 "ghost_score": jpeg_ghost.get("ghost_score", 0),
                 "compression_type": jpeg_ghost.get("compression_type", "unknown"),
             }
+        if screenshot.get("is_screenshot"):
+            details["screenshot_detected"] = True
+            details["screenshot_indicators"] = screenshot.get("indicators", [])
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
@@ -1100,6 +1168,10 @@ class AIImageDetector:
             vit2_score,
             mode,
         )
+
+        # Append screenshot notice if detected
+        if screenshot.get("is_screenshot"):
+            explanation += " Note: this appears to be a screenshot, not a camera photo. Screenshots lose camera metadata which reduces detection accuracy."
 
         return {
             "verdict": verdict,
