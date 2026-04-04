@@ -329,6 +329,9 @@ class StatisticalAnalyzer:
             scores.append(0.18)
         elif noise_std < 5.0:
             scores.append(0.10)
+        # Note: high noise alone is NOT evidence of real — AI panoramas and
+        # composite images can have high noise. Only trust noise as evidence
+        # of real when combined with camera EXIF (handled in metadata analyzer).
 
         if abs(noise_kurtosis) > 6.0:
             scores.append(0.15)
@@ -443,6 +446,8 @@ class TextureAnalyzer:
             scores.append(0.14)
         elif edge_density < 0.10:
             scores.append(0.06)
+        # Note: high edge density alone is NOT evidence of real — AI composites
+        # and tiled images can have high edge density too.
 
         # Low edge variance = uniform edge distribution (AI-like)
         if edge_std < 15:
