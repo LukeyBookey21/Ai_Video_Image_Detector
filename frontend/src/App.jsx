@@ -23,6 +23,13 @@ export default function App() {
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [history, setHistory] = useState(loadHistory)
+  const [totalChecks, setTotalChecks] = useState(0)
+
+  useEffect(() => {
+    fetch('/api/stats').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.total_analyses) setTotalChecks(d.total_analyses)
+    }).catch(() => {})
+  }, [result]) // refresh after each analysis
 
   useEffect(() => {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 20))) } catch {}
@@ -87,13 +94,18 @@ export default function App() {
             Upload a photo or video and we'll check if it was created by AI.
             It only takes a few seconds.
           </p>
-          <div className="flex items-center justify-center gap-3 mt-4">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
             <span className="text-xs px-2.5 py-1 rounded-full bg-green-900/30 text-green-400 border border-green-800/30">
-              97% accurate on 192 images
+              97% accurate
             </span>
             <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-900/30 text-indigo-400 border border-indigo-800/30">
               0.3s per check
             </span>
+            {totalChecks > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-gray-800/50 text-gray-400 border border-gray-700/30">
+                {totalChecks.toLocaleString()} checks performed
+              </span>
+            )}
           </div>
         </div>
 
