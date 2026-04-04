@@ -678,6 +678,59 @@ class PatchConsistencyAnalyzer:
             return {"ai_probability": 0.0, "noise_consistency": 1.0}
 
 
+class ELAAnalyzer:
+    """Error Level Analysis — re-compress and measure error uniformity.
+    Real photos have varied ELA (different regions compress differently).
+    AI images have more uniform ELA (generated at consistent quality)."""
+
+    def analyze(self, image: Image.Image) -> dict:
+        try:
+            img = image.convert("RGB")
+            # Re-compress at quality 90
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            buf.seek(0)
+            recompressed = Image.open(buf).convert("RGB")
+
+            # Compute error level
+            original = np.array(img, dtype=np.float64)
+            recomp = np.array(recompressed, dtype=np.float64)
+            ela = np.abs(original - recomp)
+
+            # Scale for visibility
+            ela_mean = np.mean(ela)
+            ela_std = np.std(ela)
+
+            # Compute regional ELA variance
+            h, w = ela.shape[:2]
+            block = 32
+            regional_means = []
+            for y in range(0, h - block, block):
+                for x in range(0, w - block, block):
+                    regional_means.append(np.mean(ela[y : y + block, x : x + block]))
+
+            if len(regional_means) < 4:
+                return {"ai_probability": 0.0, "ela_uniformity": 0.0}
+
+            regional_cv = np.std(regional_means) / (np.mean(regional_means) + 1e-10)
+
+            # AI images: very uniform ELA (low regional CV, typically < 0.5)
+            # Real photos: varied ELA (high regional CV, typically 0.8-2.0)
+            scores = []
+            if regional_cv < 0.3:
+                scores.append(0.12)
+            elif regional_cv < 0.5:
+                scores.append(0.06)
+
+            return {
+                "ai_probability": round(min(sum(scores), 0.2), 4),
+                "ela_uniformity": round(1.0 - min(regional_cv, 2.0) / 2.0, 4),
+                "ela_mean": round(float(ela_mean), 4),
+            }
+        except Exception:
+            return {"ai_probability": 0.0, "ela_uniformity": 0.0}
+
+
 class JPEGGhostAnalyzer:
     """Detect JPEG compression inconsistencies (double compression, format conversion)."""
 
@@ -917,6 +970,7 @@ class AIImageDetector:
         self.jpeg_ghost_analyzer = JPEGGhostAnalyzer()
         self.patch_analyzer = PatchConsistencyAnalyzer()
         self.screenshot_detector = ScreenshotDetector()
+        self.ela_analyzer = ELAAnalyzer()
 
         # Advanced analyzers
         from color_analysis import ColorSpaceAnalyzer
@@ -1014,6 +1068,7 @@ class AIImageDetector:
         jpeg_ghost = self._sanitize_dict(self.jpeg_ghost_analyzer.analyze(image_rgb, raw_bytes))
         patch = self._sanitize_dict(self.patch_analyzer.analyze(image_rgb))
         screenshot = self.screenshot_detector.analyze(image_rgb)
+        ela = self._sanitize_dict(self.ela_analyzer.analyze(image_rgb))
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -1090,6 +1145,7 @@ class AIImageDetector:
         # Add bonus signals as small adjustments
         ensemble_score += patch.get("ai_probability", 0) * 0.05
         ensemble_score += jpeg_ghost.get("ai_probability", 0) * 0.03
+        # ELA kept for details/display but not in ensemble (too marginal, risks false positives)
 
         # JPEG ghost detection: high ghost score on a JPEG without EXIF = likely re-saved AI image
         ghost_score = jpeg_ghost.get("ghost_score", 0)
@@ -1174,6 +1230,8 @@ class AIImageDetector:
         if screenshot.get("is_screenshot"):
             details["screenshot_detected"] = True
             details["screenshot_indicators"] = screenshot.get("indicators", [])
+        if ela.get("ela_uniformity", 0) > 0:
+            details["ela"] = {"uniformity": ela.get("ela_uniformity", 0), "mean_error": ela.get("ela_mean", 0)}
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
