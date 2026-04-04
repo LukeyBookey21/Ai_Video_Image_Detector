@@ -141,7 +141,21 @@ export default function ResultCard({ result }) {
           }`}>
             {confidencePhrase}
           </p>
-          <p className="text-xs text-gray-500 mt-3">
+          {/* Confidence meter */}
+          <div className="flex items-center justify-center mt-4 gap-1">
+            {[20, 35, 50, 65, 80].map((threshold, i) => {
+              const prob = result.ai_probability || 0
+              const active = prob >= threshold
+              return (
+                <div key={i} className={`h-2 flex-1 max-w-[40px] rounded-full transition-all ${
+                  active
+                    ? prob > 60 ? 'bg-red-500' : prob > 33 ? 'bg-yellow-500' : 'bg-green-500'
+                    : 'bg-gray-800'
+                }`} />
+              )
+            })}
+          </div>
+          <p className="text-xs text-gray-500 mt-3 text-center">
             This is an automated check, not a definitive answer. Use your own judgement.
           </p>
         </div>
