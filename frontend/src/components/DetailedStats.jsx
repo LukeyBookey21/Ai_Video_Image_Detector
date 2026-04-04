@@ -149,6 +149,18 @@ export default function DetailedStats({ result }) {
               <StatRow label="Temporal AI Score" value={result.temporal_analysis.temporal_ai_score + '%'} warn={result.temporal_analysis.temporal_ai_score > 30} />
               <StatRow label="Optical Flow Var." value={result.temporal_analysis.flow_consistency} />
               <StatRow label="Noise Consistency" value={result.temporal_analysis.noise_consistency} warn={result.temporal_analysis.noise_consistency < 0.1} />
+              {result.temporal_analysis.duplicate_frame_ratio != null && (
+                <StatRow label="Duplicate Frames" value={(result.temporal_analysis.duplicate_frame_ratio * 100).toFixed(0) + '%'} warn={result.temporal_analysis.duplicate_frame_ratio > 0.15} />
+              )}
+              {result.temporal_analysis.sharpness_cv != null && (
+                <StatRow label="Sharpness CV" value={result.temporal_analysis.sharpness_cv} warn={result.temporal_analysis.sharpness_cv < 0.05} />
+              )}
+              {result.temporal_analysis.avg_unique_colors != null && (
+                <StatRow label="Color Palette" value={result.temporal_analysis.avg_unique_colors + ' unique'} warn={result.temporal_analysis.avg_unique_colors < 150} />
+              )}
+              {result.temporal_analysis.animation_detected && (
+                <StatRow label="Animation" value="Detected" warn={true} />
+              )}
             </StatSection>
           )}
 

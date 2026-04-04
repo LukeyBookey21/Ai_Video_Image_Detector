@@ -164,7 +164,110 @@ def main():
     print(f"  Results: {passes}/{total} passed")
     print(f"{'=' * 55}")
 
-    if passes < total:
+    # ── Video Detection Tests ──
+    print(f"\n{'=' * 55}")
+    print("  Video — Animation Detection Test")
+    print(f"{'=' * 55}")
+
+    video_passes = 0
+    video_total = 0
+
+    try:
+        import cv2
+        import tempfile
+        import os
+        from video_processor import get_video_processor
+
+        processor = get_video_processor(detector)
+
+        # Create stop-motion animation video
+        def create_animation_video():
+            fd, path = tempfile.mkstemp(suffix=".mp4")
+            os.close(fd)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            out = cv2.VideoWriter(path, fourcc, 30, (320, 240))
+            rng = np.random.RandomState(42)
+            for pose in range(36):
+                frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                frame[120:, :] = [40, 130, 40]  # Green field
+                frame[:120, :] = [180, 120, 40]  # Blue sky
+                # Blocky figure with jitter
+                x = 50 + pose * 5 + rng.randint(-2, 3)
+                cv2.rectangle(frame, (x, 100), (x + 30, 140), [200, 50, 50], -1)
+                cv2.circle(frame, (x + 15, 90), 12, [0, 200, 230], -1)
+                # Duplicate frame (stop-motion at 12fps in 30fps)
+                for _ in range(2):
+                    out.write(frame)
+            out.release()
+            return path
+
+        # Create natural-motion video
+        def create_real_video():
+            fd, path = tempfile.mkstemp(suffix=".mp4")
+            os.close(fd)
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            out = cv2.VideoWriter(path, fourcc, 30, (320, 240))
+            rng = np.random.RandomState(99)
+            for i in range(90):
+                frame = np.zeros((240, 320, 3), dtype=np.uint8)
+                for y in range(240):
+                    r = y / 240.0
+                    frame[y, :] = [int(200 - r * 100), int(180 - r * 80), int(130 + r * 60)]
+                noise = rng.normal(0, 10, frame.shape).astype(np.int16)
+                frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+                # Motion blur
+                if i % 3 == 0:
+                    kernel = np.zeros((3, 3))
+                    kernel[1, :] = 1 / 3
+                    frame = cv2.filter2D(frame, -1, kernel)
+                out.write(frame)
+            out.release()
+            return path
+
+        # Test animation video
+        path = create_animation_video()
+        try:
+            result = processor.analyze_video(path)
+            is_ai = result["verdict"] == "AI-Generated"
+            animation = result.get("temporal_analysis", {}).get("animation_detected", False)
+            status = "PASS" if is_ai else "FAIL"
+            video_total += 1
+            if is_ai:
+                video_passes += 1
+            print(f"\n  [{status}] Stop-Motion Animation")
+            print(f"    Verdict: {result['verdict']} ({result['ai_probability']}%)")
+            print(f"    Animation detected: {animation}")
+        finally:
+            os.unlink(path)
+
+        # Test real-motion video
+        path = create_real_video()
+        try:
+            result = processor.analyze_video(path)
+            is_real = result["verdict"] == "Real/Authentic"
+            animation = result.get("temporal_analysis", {}).get("animation_detected", False)
+            status = "PASS" if is_real else "FAIL"
+            video_total += 1
+            if is_real:
+                video_passes += 1
+            print(f"\n  [{status}] Real-Motion Video")
+            print(f"    Verdict: {result['verdict']} ({result['ai_probability']}%)")
+            print(f"    Animation detected: {animation}")
+        finally:
+            os.unlink(path)
+
+    except Exception as e:
+        print(f"\n  [SKIP] Video tests: {e}")
+
+    total_all = passes + video_passes
+    total_count = total + video_total
+    print(f"\n{'=' * 55}")
+    print(f"  Image tests:  {passes}/{total} passed")
+    print(f"  Video tests:  {video_passes}/{video_total} passed")
+    print(f"  Total:        {total_all}/{total_count} passed")
+    print(f"{'=' * 55}")
+
+    if total_all < total_count:
         exit(1)
 
 
