@@ -991,6 +991,13 @@ class AIImageDetector:
     def detect_image(self, image: Image.Image, raw_bytes: bytes = None) -> dict:
         image_rgb = image.convert("RGB")
 
+        # Limit image size to prevent OOM on very large images (>4000px)
+        w, h = image_rgb.size
+        max_dim = 4096
+        if w > max_dim or h > max_dim:
+            scale = max_dim / max(w, h)
+            image_rgb = image_rgb.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
         # Run all heuristic analyzers
         freq = self._sanitize_dict(self.freq_analyzer.analyze(image_rgb))
         stat = self._sanitize_dict(self.stat_analyzer.analyze(image_rgb))
