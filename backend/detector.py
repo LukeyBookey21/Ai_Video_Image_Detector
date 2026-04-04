@@ -18,6 +18,8 @@ import io
 import logging
 import os
 import struct
+import warnings
+
 import cv2
 import numpy as np
 from PIL import Image, ImageFilter
@@ -340,11 +342,13 @@ class StatisticalAnalyzer:
         # ── Color Channel Correlation ──
         r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
         try:
-            corrs_raw = [
-                np.corrcoef(r.flatten(), g.flatten())[0, 1],
-                np.corrcoef(r.flatten(), b.flatten())[0, 1],
-                np.corrcoef(g.flatten(), b.flatten())[0, 1],
-            ]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                corrs_raw = [
+                    np.corrcoef(r.flatten(), g.flatten())[0, 1],
+                    np.corrcoef(r.flatten(), b.flatten())[0, 1],
+                    np.corrcoef(g.flatten(), b.flatten())[0, 1],
+                ]
             corrs = [c for c in corrs_raw if np.isfinite(c)]
             avg_corr = np.mean([abs(c) for c in corrs]) if corrs else 0.5
         except Exception:
@@ -499,7 +503,9 @@ class SRMAnalyzer:
         for res in residuals:
             flat = res.flatten()
             std = np.std(flat)
-            k = float(kurtosis(flat))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                k = float(kurtosis(flat))
             k = k if np.isfinite(k) else 0.0
             all_residual_stds.append(std)
             all_residual_kurtoses.append(k)

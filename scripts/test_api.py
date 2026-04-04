@@ -239,6 +239,48 @@ def main():
         test("GET /api/user/results", requests.get(f"{BASE}/api/user/results", headers=auth), 200, "results")
     test("GET /api/auth/me without token", requests.get(f"{BASE}/api/auth/me"), 401)
 
+    print("\n-- Base64 Endpoint --")
+    test(
+        "POST /api/detect/base64 with valid image",
+        requests.post(
+            f"{BASE}/api/detect/base64",
+            json={"image": __import__("base64").b64encode(create_test_jpeg().read()).decode(), "filename": "test.jpg"},
+        ),
+        200,
+        "verdict",
+    )
+    test(
+        "POST /api/detect/base64 with invalid base64",
+        requests.post(f"{BASE}/api/detect/base64", json={"image": "not-valid-base64!!!", "filename": "bad.jpg"}),
+        400,
+    )
+
+    print("\n-- Recent Analyses --")
+    test("GET /api/stats/recent", requests.get(f"{BASE}/api/stats/recent"), 200, "analyses")
+
+    print("\n-- Delete Result --")
+    if login_resp.status_code == 200:
+        # Save a result then delete it
+        save_resp = requests.post(
+            f"{BASE}/api/user/save",
+            json={
+                "filename": "delete_test.jpg",
+                "file_type": "image",
+                "verdict": "Real/Authentic",
+                "confidence": 90.0,
+                "ai_probability": 10.0,
+            },
+            headers=auth,
+        )
+        if save_resp.status_code == 200:
+            rid = save_resp.json().get("id")
+            test(f"DELETE /api/user/results/{rid}", requests.delete(f"{BASE}/api/user/results/{rid}", headers=auth), 200)
+    test(
+        "DELETE /api/user/results/99999 (not found)",
+        requests.delete(f"{BASE}/api/user/results/99999", headers=auth) if login_resp.status_code == 200 else type("R", (), {"status_code": 401})(),
+        404,
+    )
+
     print("\n-- Metrics --")
     test("GET /metrics (Prometheus)", requests.get(f"{BASE}/metrics"), 200, "ai_detector_analyses_total")
 

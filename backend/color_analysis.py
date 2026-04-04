@@ -96,8 +96,12 @@ class ColorSpaceAnalyzer:
         Y, Cb, Cr = ycbcr[:, :, 0], ycbcr[:, :, 1], ycbcr[:, :, 2]
 
         # Cb/Cr channel statistics
-        cb_kurtosis = float(kurtosis(Cb.flatten()))
-        cr_kurtosis = float(kurtosis(Cr.flatten()))
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            cb_kurtosis = float(kurtosis(Cb.flatten()))
+            cr_kurtosis = float(kurtosis(Cr.flatten()))
         cb_kurtosis = cb_kurtosis if np.isfinite(cb_kurtosis) else 0.0
         cr_kurtosis = cr_kurtosis if np.isfinite(cr_kurtosis) else 0.0
 
