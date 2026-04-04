@@ -274,10 +274,16 @@ def main():
         )
         if save_resp.status_code == 200:
             rid = save_resp.json().get("id")
-            test(f"DELETE /api/user/results/{rid}", requests.delete(f"{BASE}/api/user/results/{rid}", headers=auth), 200)
+            test(
+                f"DELETE /api/user/results/{rid}", requests.delete(f"{BASE}/api/user/results/{rid}", headers=auth), 200
+            )
     test(
         "DELETE /api/user/results/99999 (not found)",
-        requests.delete(f"{BASE}/api/user/results/99999", headers=auth) if login_resp.status_code == 200 else type("R", (), {"status_code": 401})(),
+        (
+            requests.delete(f"{BASE}/api/user/results/99999", headers=auth)
+            if login_resp.status_code == 200
+            else type("R", (), {"status_code": 401})()
+        ),
         404,
     )
 
