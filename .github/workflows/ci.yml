@@ -28,6 +28,10 @@ jobs:
           cd backend
           python -c "from detector import detector; print('Detector OK')"
           python -c "from main import app; print('App OK')"
+      - name: Unit tests
+        run: |
+          cd backend
+          python test_detector.py
 
   frontend:
     runs-on: ubuntu-latest

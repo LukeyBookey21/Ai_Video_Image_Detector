@@ -26,17 +26,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   chrome.action.setBadgeBackgroundColor({ color: '#6366f1' });
 
   try {
-    // Download image
+    // Download image and convert to base64
     const response = await fetch(imageUrl);
     const blob = await response.blob();
+    const reader = new FileReader();
+    const base64 = await new Promise((resolve) => {
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
 
-    // Send to detector API
-    const formData = new FormData();
-    formData.append('file', blob, 'image.jpg');
-
-    const result = await fetch(`${API_BASE}/api/detect`, {
+    // Send to detector API via base64 endpoint
+    const result = await fetch(`${API_BASE}/api/detect/base64`, {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, filename: imageUrl.split('/').pop() || 'image.jpg' }),
     });
 
     const data = await result.json();

@@ -621,6 +621,63 @@ class URLRequest(BaseModel):
     url: str
 
 
+class Base64Request(BaseModel):
+    image: str  # base64-encoded image data
+    filename: str = "image.jpg"
+
+
+@app.post("/api/detect/base64")
+@limiter.limit("10/hour")
+async def detect_base64(request: Request, body: Base64Request):
+    """Analyse a base64-encoded image. Useful for browser extensions and mobile apps."""
+    import base64
+
+    try:
+        image_data = base64.b64decode(body.image)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 data.")
+
+    if len(image_data) > MAX_FILE_SIZE:
+        _error(400, "Image too large. Maximum 50 MB.", "FILE_TOO_LARGE")
+
+    # Detect content type from magic bytes
+    if image_data[:2] == b"\xff\xd8":
+        content_type = "image/jpeg"
+    elif image_data[:4] == b"\x89PNG":
+        content_type = "image/png"
+    elif image_data[:4] == b"RIFF" and image_data[8:12] == b"WEBP":
+        content_type = "image/webp"
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported image format. Send JPEG, PNG, or WebP.")
+
+    try:
+        image = Image.open(io.BytesIO(image_data))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not decode image.")
+
+    start_time = time.time()
+    result = ai_detector.detect_image(image, raw_bytes=image_data)
+
+    heatmap_data = None
+    try:
+        heatmap_data = generate_heatmap(image)
+    except Exception:
+        pass
+
+    elapsed = round(time.time() - start_time, 2)
+    response = {
+        "filename": body.filename,
+        "file_type": "image",
+        "file_size_mb": round(len(image_data) / (1024 * 1024), 2),
+        "processing_time_seconds": elapsed,
+        **result,
+    }
+    if heatmap_data:
+        response["heatmap"] = heatmap_data
+    _update_stats(result.get("verdict", ""))
+    return response
+
+
 def _is_private_ip(hostname: str) -> bool:
     """Check if hostname resolves to a private/loopback IP (SSRF protection)."""
     try:
