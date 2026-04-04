@@ -278,12 +278,14 @@ export default function ResultCard({ result }) {
         </div>
 
         {/* File info footer */}
-        <div className="px-6 py-3 bg-gray-900/50 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
-          <span>{result.file_type === 'video' ? 'Video' : 'Image'} &middot; {result.file_size_mb} MB</span>
+        <div className="px-6 py-3 bg-gray-900/50 border-t border-gray-800 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>{result.file_type === 'video' ? 'Video' : 'Image'} &middot; {result.file_size_mb || '?'} MB</span>
+          {d.screenshot_detected && <span className="text-yellow-500">Screenshot</span>}
+          {result.temporal_analysis?.animation_detected && <span className="text-yellow-500">Animation</span>}
           <span className={result.detection_mode === 'ml_ensemble' ? 'text-green-500' : 'text-yellow-500'}>
-            {result.detection_mode === 'ml_ensemble' ? 'ML + Heuristic' : 'Heuristic Only'}
+            {result.detection_mode === 'ml_ensemble' ? 'ML + Heuristic' : result.detection_mode === 'history' ? 'Cached' : 'Heuristic Only'}
           </span>
-          <span>Analysed in {result.processing_time_seconds}s</span>
+          {result.processing_time_seconds && <span>Analysed in {result.processing_time_seconds}s</span>}
         </div>
       </div>
 
