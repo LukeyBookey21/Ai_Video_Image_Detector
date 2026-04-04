@@ -42,6 +42,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start = time.time()
         request_id = str(uuid.uuid4())[:8]
+
+        # Reject oversized JSON bodies (100MB limit for base64, 1MB for other JSON)
+        content_type = request.headers.get("content-type", "")
+        content_length = int(request.headers.get("content-length", "0") or "0")
+        if "application/json" in content_type:
+            max_json = 100 * 1024 * 1024 if "/base64" in request.url.path else 1024 * 1024
+            if content_length > max_json:
+                return JSONResponse(
+                    status_code=413, content={"error": "Request body too large.", "code": "BODY_TOO_LARGE"}
+                )
+
         response = await call_next(request)
         elapsed = round((time.time() - start) * 1000)
         if request.url.path.startswith("/api/detect"):
