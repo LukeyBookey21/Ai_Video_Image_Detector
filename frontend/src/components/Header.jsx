@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import AccountButton from './AccountButton'
 
 export default function Header() {
-  const [health, setHealth] = useState(null)
+  const [health, setHealth] = useState(undefined) // undefined=loading, null=offline, object=loaded
 
   useEffect(() => {
     const check = () => {
@@ -33,7 +33,12 @@ export default function Header() {
         </a>
         <div className="flex items-center gap-3">
           <AccountButton />
-          {health ? (
+          {health === undefined ? (
+            <span className="inline-flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-500 border border-gray-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></span>
+              Connecting...
+            </span>
+          ) : health ? (
             <span className={`inline-flex items-center gap-1.5 px-2 sm:px-3 py-1 rounded-full text-xs font-medium border ${
               mlActive
                 ? 'bg-green-900/50 text-green-400 border-green-800'
