@@ -59,8 +59,17 @@ from detector import detector as ai_detector
 from video_processor import get_video_processor
 from heatmap import generate_heatmap
 from database import (
-    init_db, update_stats, get_stats, add_to_waitlist, log_analysis, get_recent_analyses,
-    create_user, get_user_by_token, save_result, get_user_results, delete_user_result,
+    init_db,
+    update_stats,
+    get_stats,
+    add_to_waitlist,
+    log_analysis,
+    get_recent_analyses,
+    create_user,
+    get_user_by_token,
+    save_result,
+    get_user_results,
+    delete_user_result,
 )
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"}
@@ -278,8 +287,13 @@ async def user_save_result(request: Request, body: SaveResultRequest):
     """Save an analysis result to the user's account."""
     user = _get_current_user(request)
     result_id = save_result(
-        user["id"], body.filename, body.file_type, body.verdict,
-        body.confidence, body.ai_probability, body.explanation,
+        user["id"],
+        body.filename,
+        body.file_type,
+        body.verdict,
+        body.confidence,
+        body.ai_probability,
+        body.explanation,
     )
     return {"id": result_id, "status": "saved"}
 

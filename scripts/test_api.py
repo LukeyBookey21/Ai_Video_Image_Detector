@@ -221,10 +221,18 @@ def main():
         test("GET /api/auth/me", requests.get(f"{BASE}/api/auth/me", headers=auth), 200, "email")
         test(
             "POST /api/user/save",
-            requests.post(f"{BASE}/api/user/save", json={
-                "filename": "test.jpg", "file_type": "image", "verdict": "Real/Authentic",
-                "confidence": 85.0, "ai_probability": 15.0, "explanation": "Test",
-            }, headers=auth),
+            requests.post(
+                f"{BASE}/api/user/save",
+                json={
+                    "filename": "test.jpg",
+                    "file_type": "image",
+                    "verdict": "Real/Authentic",
+                    "confidence": 85.0,
+                    "ai_probability": 15.0,
+                    "explanation": "Test",
+                },
+                headers=auth,
+            ),
             200,
             "saved",
         )

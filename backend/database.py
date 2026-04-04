@@ -183,12 +183,29 @@ def get_user_by_token(token: str) -> dict | None:
         return dict(row) if row else None
 
 
-def save_result(user_id: int, filename: str, file_type: str, verdict: str, confidence: float, ai_probability: float, explanation: str) -> int:
+def save_result(
+    user_id: int,
+    filename: str,
+    file_type: str,
+    verdict: str,
+    confidence: float,
+    ai_probability: float,
+    explanation: str,
+) -> int:
     """Save an analysis result for a user."""
     with get_db() as conn:
         conn.execute(
             "INSERT INTO saved_results (user_id, filename, file_type, verdict, confidence, ai_probability, explanation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, filename, file_type, verdict, confidence, ai_probability, explanation, datetime.utcnow().isoformat() + "Z"),
+            (
+                user_id,
+                filename,
+                file_type,
+                verdict,
+                confidence,
+                ai_probability,
+                explanation,
+                datetime.utcnow().isoformat() + "Z",
+            ),
         )
         return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 

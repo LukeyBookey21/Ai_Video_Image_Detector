@@ -312,9 +312,13 @@ class VideoProcessor:
             parts = []
             dup_ratio = temporal.get("duplicate_frame_ratio", 0)
             if dup_ratio > 0.15:
-                parts.append(f"{dup_ratio*100:.0f}% of frames are duplicated — this looks like stop-motion animation, not real video")
+                parts.append(
+                    f"{dup_ratio*100:.0f}% of frames are duplicated — this looks like stop-motion animation, not real video"
+                )
             if temporal.get("sharpness_cv", 1) < 0.05:
-                parts.append("every frame is equally sharp with no motion blur — real video always has some blur on moving objects")
+                parts.append(
+                    "every frame is equally sharp with no motion blur — real video always has some blur on moving objects"
+                )
             if temporal.get("avg_unique_colors", 999) < 150:
                 parts.append("very limited colour palette — suggests animation or CGI rather than real footage")
             if temporal.get("flow_consistency", 1) < 0.5 and not parts:
@@ -409,26 +413,19 @@ class VideoProcessor:
 
         # If strong stop-motion/animation signals detected (frame duplication,
         # no motion blur, limited palette), boost temporal weight significantly
-        has_animation_signals = (
-            temporal.get("duplicate_frame_ratio", 0) > 0.15
-            or (temporal.get("sharpness_cv", 1) < 0.05 and temporal.get("avg_unique_colors", 999) < 150)
+        has_animation_signals = temporal.get("duplicate_frame_ratio", 0) > 0.15 or (
+            temporal.get("sharpness_cv", 1) < 0.05 and temporal.get("avg_unique_colors", 999) < 150
         )
 
         if has_animation_signals:
             # Animation mode: temporal signals are primary
             combined_score = (
-                0.20 * avg_ai_score
-                + 0.05 * max_ai_score
-                + 0.55 * temporal_score_pct
-                + 0.20 * (adv_score * 100)
+                0.20 * avg_ai_score + 0.05 * max_ai_score + 0.55 * temporal_score_pct + 0.20 * (adv_score * 100)
             )
         else:
             # Standard mode: frames + max + temporal + advanced
             combined_score = (
-                0.40 * avg_ai_score
-                + 0.15 * max_ai_score
-                + 0.20 * temporal_score_pct
-                + 0.25 * (adv_score * 100)
+                0.40 * avg_ai_score + 0.15 * max_ai_score + 0.20 * temporal_score_pct + 0.25 * (adv_score * 100)
             )
 
         verdict = "AI-Generated" if combined_score > 42.0 else "Real/Authentic"

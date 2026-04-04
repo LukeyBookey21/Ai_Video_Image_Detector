@@ -70,13 +70,16 @@ def main():
         sys.exit(1)
 
     print("\n-- Health --")
+
     def test_health():
         r = requests.get(f"{BASE}/api/health")
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
+
     test("Health returns status ok", test_health)
 
     print("\n-- Real photo detection --")
+
     def test_real_photo():
         r = requests.post(f"{BASE}/api/detect", files={"file": ("photo.jpg", make_jpeg_with_exif(), "image/jpeg")})
         assert r.status_code == 200, f"Status {r.status_code}"
@@ -85,9 +88,11 @@ def main():
         assert data["verdict"] == "Real/Authentic", f"Got {data['verdict']} (prob={data.get('ai_probability')})"
         assert "confidence" in data
         assert "explanation" in data
+
     test("JPEG with Nikon EXIF detected as real", test_real_photo)
 
     print("\n-- AI image detection --")
+
     def test_ai_png():
         r = requests.post(f"{BASE}/api/detect", files={"file": ("ai_art.png", make_ai_png(), "image/png")})
         assert r.status_code == 200, f"Status {r.status_code}"
@@ -95,9 +100,11 @@ def main():
         assert "verdict" in data
         # PNG with no EXIF at AI dimensions should be flagged
         assert data["ai_probability"] > 25, f"AI prob too low: {data['ai_probability']}"
+
     test("PNG 512x512 no EXIF gets high AI probability", test_ai_png)
 
     print("\n-- Caching --")
+
     def test_cache():
         buf = make_jpeg_with_exif()
         content = buf.read()
@@ -109,9 +116,11 @@ def main():
         assert r2.status_code == 200
         d2 = r2.json()
         assert d2.get("cached") == True, "Second request should be cached"
+
     test("Duplicate upload returns cached result", test_cache)
 
     print("\n-- Batch upload --")
+
     def test_batch():
         files = [
             ("files", ("a.jpg", make_jpeg_with_exif(), "image/jpeg")),
@@ -122,33 +131,41 @@ def main():
         data = r.json()
         assert data["total"] == 2, f"Expected 2 results, got {data['total']}"
         assert len(data["results"]) == 2
+
     test("Batch upload processes 2 files", test_batch)
 
     print("\n-- Error handling --")
+
     def test_missing_file():
         r = requests.post(f"{BASE}/api/detect")
         assert r.status_code == 422
+
     test("Missing file returns 422", test_missing_file)
 
     def test_invalid_type():
         r = requests.post(f"{BASE}/api/detect", files={"file": ("bad.txt", io.BytesIO(b"hello"), "text/plain")})
         assert r.status_code == 400
+
     test("Invalid file type returns 400", test_invalid_type)
 
     print("\n-- Stats --")
+
     def test_stats():
         r = requests.get(f"{BASE}/api/stats")
         assert r.status_code == 200
         data = r.json()
         assert "total_analyses" in data
         assert data["total_analyses"] > 0, "Should have at least 1 analysis from previous tests"
+
     test("Stats endpoint returns counters", test_stats)
 
     print("\n-- Metrics --")
+
     def test_metrics():
         r = requests.get(f"{BASE}/metrics")
         assert r.status_code == 200
         assert "ai_detector_analyses_total" in r.text
+
     test("Prometheus metrics endpoint works", test_metrics)
 
     print(f"\n{'=' * 55}")

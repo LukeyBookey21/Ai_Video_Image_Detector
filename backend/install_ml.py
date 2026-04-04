@@ -18,6 +18,7 @@ def check_installed():
     checks = {}
     try:
         import torch
+
         checks["torch"] = torch.__version__
         checks["cuda"] = torch.cuda.is_available()
         checks["device"] = "cuda" if torch.cuda.is_available() else "cpu"
@@ -26,17 +27,24 @@ def check_installed():
 
     try:
         import transformers
+
         checks["transformers"] = transformers.__version__
     except ImportError:
         checks["transformers"] = None
 
     try:
         from transformers import pipeline
+
         # Check if models are cached
         import os
+
         cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
-        checks["sdxl_cached"] = any("sdxl-detector" in d for d in os.listdir(cache_dir)) if os.path.exists(cache_dir) else False
-        checks["deepfake_cached"] = any("deepfake-detector" in d for d in os.listdir(cache_dir)) if os.path.exists(cache_dir) else False
+        checks["sdxl_cached"] = (
+            any("sdxl-detector" in d for d in os.listdir(cache_dir)) if os.path.exists(cache_dir) else False
+        )
+        checks["deepfake_cached"] = (
+            any("deepfake-detector" in d for d in os.listdir(cache_dir)) if os.path.exists(cache_dir) else False
+        )
     except Exception:
         checks["sdxl_cached"] = False
         checks["deepfake_cached"] = False
@@ -73,8 +81,7 @@ def main():
         cmd = [sys.executable, "-m", "pip", "install", "torch", "torchvision", "transformers"]
     else:
         print("       Installing CPU-only version (smaller download)...")
-        cmd = [sys.executable, "-m", "pip", "install",
-               "torch", "--index-url", "https://download.pytorch.org/whl/cpu"]
+        cmd = [sys.executable, "-m", "pip", "install", "torch", "--index-url", "https://download.pytorch.org/whl/cpu"]
 
     result = subprocess.run(cmd, capture_output=False)
     if result.returncode != 0:
@@ -90,6 +97,7 @@ def main():
     print("\n[2/3] Downloading SDXL detector model (~350MB)...")
     try:
         from transformers import pipeline
+
         pipe = pipeline("image-classification", model="Organika/sdxl-detector", device=-1)
         print("       SDXL detector downloaded and verified.")
         del pipe
@@ -101,6 +109,7 @@ def main():
     print("\n[3/3] Downloading deepfake detector model (~350MB)...")
     try:
         from transformers import pipeline
+
         pipe = pipeline("image-classification", model="prithivMLmods/deepfake-detector-model-v1", device=-1)
         print("       Deepfake detector downloaded and verified.")
         del pipe

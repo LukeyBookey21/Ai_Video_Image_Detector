@@ -146,6 +146,7 @@ def download_cifake(limit: int = 100):
     except ImportError:
         print("Installing datasets library...")
         import subprocess
+
         subprocess.check_call([sys.executable, "-m", "pip", "install", "datasets"])
         from datasets import load_dataset
 
