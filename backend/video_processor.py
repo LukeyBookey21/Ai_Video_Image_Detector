@@ -155,12 +155,97 @@ class VideoProcessor:
             if flicker_score > 2.0:
                 scores.append(0.10)
 
+        # ── Frame Duplication Detection (Stop-motion / Animation) ──
+        # Stop-motion animation renders at 8-15fps but plays at 24-30fps,
+        # producing clusters of identical or near-identical frames.
+        # Real video has continuous motion — no two consecutive frames are identical.
+        duplicate_count = 0
+        near_dup_count = 0
+        for i in range(len(raw_frames) - 1):
+            g1 = cv2.cvtColor(raw_frames[i], cv2.COLOR_RGB2GRAY)
+            g2 = cv2.cvtColor(raw_frames[i + 1], cv2.COLOR_RGB2GRAY)
+            # Resize for fast comparison
+            h, w = g1.shape
+            scale = min(128 / h, 128 / w, 1.0)
+            if scale < 1.0:
+                g1 = cv2.resize(g1, (int(w * scale), int(h * scale)))
+                g2 = cv2.resize(g2, (int(w * scale), int(h * scale)))
+            diff = np.mean(np.abs(g1.astype(float) - g2.astype(float)))
+            if diff < 0.5:
+                duplicate_count += 1  # Exact duplicate
+            elif diff < 3.0:
+                near_dup_count += 1  # Near-duplicate (minor jitter)
+
+        total_pairs = max(len(raw_frames) - 1, 1)
+        dup_ratio = duplicate_count / total_pairs
+        near_dup_ratio = (duplicate_count + near_dup_count) / total_pairs
+
+        # >30% duplicate frames = strong stop-motion/animation indicator
+        if dup_ratio > 0.30:
+            scores.append(0.30)
+        elif dup_ratio > 0.15:
+            scores.append(0.18)
+
+        # >50% near-duplicate frames = animation at low effective FPS
+        if near_dup_ratio > 0.50:
+            scores.append(0.15)
+
+        # ── Motion Blur Absence Detection ──
+        # Real video has motion blur proportional to shutter speed.
+        # Stop-motion and CGI have zero motion blur — every frame is sharp.
+        sharpness_values = []
+        for frame in raw_frames:
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            h, w = gray.shape
+            scale = min(256 / h, 256 / w, 1.0)
+            if scale < 1.0:
+                gray = cv2.resize(gray, (int(w * scale), int(h * scale)))
+            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+            sharpness_values.append(laplacian_var)
+
+        if sharpness_values:
+            sharpness_std = np.std(sharpness_values)
+            sharpness_mean = np.mean(sharpness_values)
+            sharpness_cv = sharpness_std / (sharpness_mean + 1e-10)
+
+            # Real video: sharpness varies across frames (motion blur on action frames)
+            # Stop-motion: all frames are equally sharp (CV < 0.05)
+            if sharpness_cv < 0.03 and len(raw_frames) > 5:
+                scores.append(0.15)
+            elif sharpness_cv < 0.08 and len(raw_frames) > 5:
+                scores.append(0.08)
+
+        # ── Color Palette Limitation (Animation Detection) ──
+        # Real video has continuous color distribution.
+        # Animation/Lego uses a limited palette of discrete colors.
+        unique_colors_per_frame = []
+        for frame in raw_frames[:5]:  # Sample first 5 frames
+            small = cv2.resize(frame, (64, 64))
+            # Quantize to reduce noise, then count unique colors
+            quantized = (small // 16) * 16
+            pixels = quantized.reshape(-1, 3)
+            unique = len(set(map(tuple, pixels)))
+            unique_colors_per_frame.append(unique)
+
+        if unique_colors_per_frame:
+            avg_unique = np.mean(unique_colors_per_frame)
+            # Real video at 64x64 with 16-level quantization: typically 200-800 unique colors
+            # Animation with limited palette: typically 30-150 unique colors
+            if avg_unique < 100:
+                scores.append(0.15)
+            elif avg_unique < 150:
+                scores.append(0.08)
+
         temporal_ai_score = min(sum(scores), 1.0)
 
         return {
             "temporal_score": round(temporal_ai_score, 4),
             "flow_consistency": round(float(np.std(flow_magnitudes)) if flow_magnitudes else 0, 4),
             "noise_consistency": round(float(noise_variation), 4),
+            "duplicate_frame_ratio": round(float(dup_ratio), 4),
+            "near_duplicate_ratio": round(float(near_dup_ratio), 4),
+            "sharpness_cv": round(float(sharpness_cv) if sharpness_values else 0, 4),
+            "avg_unique_colors": round(float(avg_unique) if unique_colors_per_frame else 0, 1),
         }
 
     def analyze_advanced(self, frames: list) -> dict:
@@ -225,14 +310,21 @@ class VideoProcessor:
         ts = temporal.get("temporal_score", 0)
         if ts > 0.3:
             parts = []
-            if temporal.get("flow_consistency", 1) < 0.5:
+            dup_ratio = temporal.get("duplicate_frame_ratio", 0)
+            if dup_ratio > 0.15:
+                parts.append(f"{dup_ratio*100:.0f}% of frames are duplicated — this looks like stop-motion animation, not real video")
+            if temporal.get("sharpness_cv", 1) < 0.05:
+                parts.append("every frame is equally sharp with no motion blur — real video always has some blur on moving objects")
+            if temporal.get("avg_unique_colors", 999) < 150:
+                parts.append("very limited colour palette — suggests animation or CGI rather than real footage")
+            if temporal.get("flow_consistency", 1) < 0.5 and not parts:
                 parts.append("unnaturally uniform motion patterns")
-            if temporal.get("noise_consistency", 1) < 0.1:
+            if temporal.get("noise_consistency", 1) < 0.1 and not parts:
                 parts.append("suspiciously consistent noise across frames")
             if parts:
-                reasons.append("Temporal analysis found " + ", ".join(parts))
+                reasons.append("Temporal analysis found: " + "; ".join(parts))
             else:
-                reasons.append("Temporal consistency patterns suggest AI generation")
+                reasons.append("Temporal consistency patterns suggest AI generation or animation")
 
         # Advanced signals
         if advanced:
@@ -311,15 +403,33 @@ class VideoProcessor:
         max_ai_score = float(np.max(ai_scores))
         min_ai_score = float(np.min(ai_scores))
 
-        # Weighted combination:
-        # frames (40%) + max frame (15%) + temporal (20%) + advanced (25%)
+        # Weighted combination — adaptive weights based on signal strength
         adv_score = advanced.get("combined_ai_probability", 0)
-        combined_score = (
-            0.40 * avg_ai_score
-            + 0.15 * max_ai_score
-            + 0.20 * (temporal["temporal_score"] * 100)
-            + 0.25 * (adv_score * 100)
+        temporal_score_pct = temporal["temporal_score"] * 100
+
+        # If strong stop-motion/animation signals detected (frame duplication,
+        # no motion blur, limited palette), boost temporal weight significantly
+        has_animation_signals = (
+            temporal.get("duplicate_frame_ratio", 0) > 0.15
+            or (temporal.get("sharpness_cv", 1) < 0.05 and temporal.get("avg_unique_colors", 999) < 150)
         )
+
+        if has_animation_signals:
+            # Animation mode: temporal signals are primary
+            combined_score = (
+                0.20 * avg_ai_score
+                + 0.05 * max_ai_score
+                + 0.55 * temporal_score_pct
+                + 0.20 * (adv_score * 100)
+            )
+        else:
+            # Standard mode: frames + max + temporal + advanced
+            combined_score = (
+                0.40 * avg_ai_score
+                + 0.15 * max_ai_score
+                + 0.20 * temporal_score_pct
+                + 0.25 * (adv_score * 100)
+            )
 
         verdict = "AI-Generated" if combined_score > 42.0 else "Real/Authentic"
         confidence = combined_score if combined_score > 42.0 else (100.0 - combined_score)
@@ -349,6 +459,11 @@ class VideoProcessor:
                 "temporal_ai_score": round(temporal["temporal_score"] * 100, 1),
                 "flow_consistency": temporal.get("flow_consistency", 0),
                 "noise_consistency": temporal.get("noise_consistency", 0),
+                "duplicate_frame_ratio": temporal.get("duplicate_frame_ratio", 0),
+                "near_duplicate_ratio": temporal.get("near_duplicate_ratio", 0),
+                "sharpness_cv": temporal.get("sharpness_cv", 0),
+                "avg_unique_colors": temporal.get("avg_unique_colors", 0),
+                "animation_detected": has_animation_signals,
             },
             "advanced_analysis": {
                 "physiological": advanced.get("physiological", {}),
