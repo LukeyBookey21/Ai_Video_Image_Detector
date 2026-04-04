@@ -15,11 +15,22 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+log_format = os.environ.get("LOG_FORMAT", "text")
+if log_format == "json":
+    # JSON logging for production log aggregation (Datadog, CloudWatch, etc.)
+    import json as _json
+
+    class JSONFormatter(logging.Formatter):
+        def format(self, record):
+            return _json.dumps(
+                {"timestamp": self.formatTime(record), "level": record.levelname, "message": record.getMessage()}
+            )
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(JSONFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+else:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger("ai-detector")
 from urllib.parse import urlparse
 
