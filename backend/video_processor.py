@@ -26,7 +26,7 @@ from advanced_video import (
 
 
 class VideoProcessor:
-    def __init__(self, detector: AIImageDetector, max_frames: int = 15):
+    def __init__(self, detector: AIImageDetector, max_frames: int = 12):
         self.detector = detector
         self.max_frames = max_frames
         self.physio_analyzer = PhysiologicalAnalyzer()
@@ -374,15 +374,15 @@ class VideoProcessor:
                 "error": "Could not extract frames from video",
             }
 
-        # Per-frame analysis
+        # Per-frame analysis — create one JPEG template for metadata bypass
+        jpeg_template = io.BytesIO()
+        frames[0].save(jpeg_template, format="JPEG", quality=85)
+        jpeg_bytes = jpeg_template.getvalue()
+
         frame_results = []
         ai_scores = []
         for i, frame in enumerate(frames):
-            # Video frames have no file metadata — pass synthetic JPEG bytes
-            # to avoid false metadata flags (frames are extracted from video, not files)
-            buf = io.BytesIO()
-            frame.save(buf, format="JPEG", quality=95)
-            result = self.detector.detect_image(frame, raw_bytes=buf.getvalue())
+            result = self.detector.detect_image(frame, raw_bytes=jpeg_bytes)
             frame_results.append(
                 {
                     "frame_index": i,

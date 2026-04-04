@@ -70,6 +70,15 @@ export default function SignalSummary({ details, result }) {
     })
   }
 
+  // Screenshot detection
+  if (details.screenshot_detected) {
+    signals.push({
+      label: 'Screenshot detected',
+      description: 'This appears to be a screenshot, not a camera photo. Detection accuracy is reduced because screenshots lose camera metadata.',
+      level: 'medium',
+    })
+  }
+
   // Video-specific: animation detection
   if (result?.temporal_analysis?.animation_detected) {
     signals.push({
