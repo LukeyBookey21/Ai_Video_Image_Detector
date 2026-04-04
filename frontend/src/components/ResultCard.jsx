@@ -41,6 +41,37 @@ function DetailChip({ label, value }) {
   )
 }
 
+function SaveButton({ result }) {
+  const [saved, setSaved] = React.useState(false)
+  const handleSave = async () => {
+    let token
+    try { token = localStorage.getItem('ai-detector-token') } catch { return }
+    if (!token) return
+    try {
+      const res = await fetch('/api/user/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          filename: result.filename || '', file_type: result.file_type || 'image',
+          verdict: result.verdict || '', confidence: result.confidence || 0,
+          ai_probability: result.ai_probability || 0, explanation: result.explanation || '',
+        }),
+      })
+      if (res.ok) setSaved(true)
+    } catch {}
+  }
+  // Only show if logged in
+  let token
+  try { token = localStorage.getItem('ai-detector-token') } catch {}
+  if (!token) return null
+  return (
+    <button onClick={handleSave} disabled={saved} className="text-xs text-gray-500 hover:text-indigo-400 transition-colors flex items-center gap-1.5 py-2 min-h-[44px]">
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+      {saved ? 'Saved' : 'Save to account'}
+    </button>
+  )
+}
+
 export default function ResultCard({ result }) {
   const [showDetails, setShowDetails] = useState(false)
   const [copyLabel, setCopyLabel] = useState('Copy result')
@@ -209,8 +240,8 @@ export default function ResultCard({ result }) {
           </div>
         )}
 
-        {/* Share buttons */}
-        <div className="px-6 py-3 border-t border-gray-800/50 flex gap-3">
+        {/* Share and save buttons */}
+        <div className="px-6 py-3 border-t border-gray-800/50 flex flex-wrap gap-3">
           <button
             onClick={handleCopy}
             className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 py-2 min-h-[44px]"
@@ -229,6 +260,7 @@ export default function ResultCard({ result }) {
             </svg>
             Download report
           </button>
+          <SaveButton result={result} />
         </div>
 
         {/* File info footer */}
