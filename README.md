@@ -2,23 +2,45 @@
 
 Detect AI-generated images and deepfake videos using a multi-signal forensic ensemble. Analyses frequency patterns, noise fingerprints, facial anomalies, colour space forensics, and (optionally) ML models to produce a confidence score.
 
-**92% accuracy** on real-world test set | **0% false positive rate** | 11 detection signals
+**97% accuracy** on 192 images | **98%** on 100 videos | **0% false positive rate** | 13 detection signals
 
 ## Quick Start
 
+### Option 1 — Web App
 ```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-python main.py
+# Windows: double-click start.bat
+# Mac/Linux: ./start.sh
+# Or manually:
+cd backend && pip install -r requirements.txt && python main.py &
+cd frontend && npm install && npm run dev
+```
+Open **http://localhost:5173** in your browser.
 
-# Frontend (new terminal)
-cd frontend
-npm install
-npm run dev
+### Option 2 — Command Line
+```bash
+cd backend && pip install -r requirements.txt
+
+# Check a single file
+python cli.py photo.jpg
+
+# Check with detailed breakdown
+python cli.py -v suspicious_video.mp4
+
+# Check an entire folder
+python cli.py ~/Downloads/
+
+# Watch a folder for new files (auto-check)
+python cli.py --watch ~/Downloads/
+
+# Output as CSV for spreadsheets
+python cli.py --csv folder/ > results.csv
+
+# Output as JSON for scripts
+python cli.py --json photo.jpg
 ```
 
-Open **http://localhost:5173** in your browser.
+### Option 3 — Windows Drag-and-Drop
+Drag any image or video file onto `check.bat`.
 
 ## Deploy
 
