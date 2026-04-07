@@ -1057,26 +1057,54 @@ class AIImageDetector:
             scale = max_dim / max(w, h)
             image_rgb = image_rgb.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-        # Run all heuristic analyzers
-        freq = self._sanitize_dict(self.freq_analyzer.analyze(image_rgb))
-        stat = self._sanitize_dict(self.stat_analyzer.analyze(image_rgb))
-        texture = self._sanitize_dict(self.texture_analyzer.analyze(image_rgb))
-        srm = self._sanitize_dict(self.srm_analyzer.analyze(image_rgb))
-        meta = self._sanitize_dict(self.metadata_analyzer.analyze(image_rgb, raw_bytes))
-        color = self._sanitize_dict(self.color_analyzer.analyze(image_rgb))
-        face = self._sanitize_dict(self.face_analyzer.analyze(image_rgb))
-        jpeg_ghost = self._sanitize_dict(self.jpeg_ghost_analyzer.analyze(image_rgb, raw_bytes))
-        patch = self._sanitize_dict(self.patch_analyzer.analyze(image_rgb))
-        screenshot = self.screenshot_detector.analyze(image_rgb)
-        ela = self._sanitize_dict(self.ela_analyzer.analyze(image_rgb))
-
-        # New modular signals
+        # Run all heuristic analyzers concurrently
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from signals import gan_fingerprint, diffusion_artifacts, noise_map, prnu
 
-        gan_fp = gan_fingerprint.analyze(image_rgb)
-        diffusion = diffusion_artifacts.analyze(image_rgb)
-        noise_inc = noise_map.analyze(image_rgb)
-        prnu_result = prnu.analyze(image_rgb)
+        def _safe(fn, *args):
+            try:
+                return fn(*args)
+            except Exception:
+                return {}
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = {
+                pool.submit(_safe, self.freq_analyzer.analyze, image_rgb): "freq",
+                pool.submit(_safe, self.stat_analyzer.analyze, image_rgb): "stat",
+                pool.submit(_safe, self.texture_analyzer.analyze, image_rgb): "texture",
+                pool.submit(_safe, self.srm_analyzer.analyze, image_rgb): "srm",
+                pool.submit(_safe, self.metadata_analyzer.analyze, image_rgb, raw_bytes): "meta",
+                pool.submit(_safe, self.color_analyzer.analyze, image_rgb): "color",
+                pool.submit(_safe, self.face_analyzer.analyze, image_rgb): "face",
+                pool.submit(_safe, self.jpeg_ghost_analyzer.analyze, image_rgb, raw_bytes): "jpeg_ghost",
+                pool.submit(_safe, self.patch_analyzer.analyze, image_rgb): "patch",
+                pool.submit(_safe, self.screenshot_detector.analyze, image_rgb): "screenshot",
+                pool.submit(_safe, self.ela_analyzer.analyze, image_rgb): "ela",
+                pool.submit(_safe, gan_fingerprint.analyze, image_rgb): "gan_fp",
+                pool.submit(_safe, diffusion_artifacts.analyze, image_rgb): "diffusion",
+                pool.submit(_safe, noise_map.analyze, image_rgb): "noise_inc",
+                pool.submit(_safe, prnu.analyze, image_rgb): "prnu_result",
+            }
+            results = {}
+            for future in as_completed(futures):
+                name = futures[future]
+                results[name] = future.result()
+
+        freq = self._sanitize_dict(results.get("freq", {}))
+        stat = self._sanitize_dict(results.get("stat", {}))
+        texture = self._sanitize_dict(results.get("texture", {}))
+        srm = self._sanitize_dict(results.get("srm", {}))
+        meta = self._sanitize_dict(results.get("meta", {}))
+        color = self._sanitize_dict(results.get("color", {}))
+        face = self._sanitize_dict(results.get("face", {}))
+        jpeg_ghost = self._sanitize_dict(results.get("jpeg_ghost", {}))
+        patch = self._sanitize_dict(results.get("patch", {}))
+        screenshot = results.get("screenshot", {})
+        ela = self._sanitize_dict(results.get("ela", {}))
+        gan_fp = results.get("gan_fp", {})
+        diffusion = results.get("diffusion", {})
+        noise_inc = results.get("noise_inc", {})
+        prnu_result = results.get("prnu_result", {})
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
