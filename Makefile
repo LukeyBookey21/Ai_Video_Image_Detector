@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend test lint format docker clean
+.PHONY: dev backend frontend test lint format docker clean cli
 
 # Start both servers for development
 dev:
@@ -14,6 +14,14 @@ backend:
 frontend:
 	cd frontend && npm run dev
 
+# CLI — check files from command line
+cli:
+	@echo "Usage: python cli.py <file> [options]"
+	@echo "  python cli.py photo.jpg"
+	@echo "  python cli.py video.mp4 -v"
+	@echo "  python cli.py folder/"
+	@echo "  python cli.py --json photo.jpg"
+
 # Run all tests
 test:
 	cd backend && python test_detector.py
@@ -26,11 +34,11 @@ benchmark:
 
 # Lint and format
 lint:
-	black --check --line-length 120 backend/ scripts/
+	black --check --line-length 120 backend/ scripts/ cli.py
 	bandit -r backend/ -ll --exclude backend/test_detector.py -q
 
 format:
-	black --line-length 120 backend/ scripts/
+	black --line-length 120 backend/ scripts/ cli.py
 
 # Docker
 docker:
