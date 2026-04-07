@@ -143,13 +143,15 @@ Examples:
   python cli.py video.mp4              Check a video
   python cli.py *.png                  Check all PNGs in current dir
   python cli.py photos/                Check all files in a folder
+  python cli.py -v photo.jpg           Verbose with signal breakdown
   python cli.py --json photo.jpg       Output as JSON
-  python cli.py -v photo.jpg           Verbose output with signal breakdown
+  python cli.py --watch ~/Downloads    Auto-check new downloads
         """,
     )
     parser.add_argument("files", nargs="+", help="Image/video files or folders to check")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed signal breakdown")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--watch", action="store_true", help="Watch folder for new files and auto-check them")
     parser.add_argument("--threshold", type=float, default=None, help="Custom detection threshold (default: 0.33)")
     args = parser.parse_args()
 
@@ -170,6 +172,55 @@ Examples:
             all_files.append(pattern)
         else:
             print(f"  Warning: {pattern} not found, skipping", file=sys.stderr)
+
+    # Watch mode — monitor folder for new files
+    if args.watch:
+        watch_dirs = [p for p in args.files if os.path.isdir(p)]
+        if not watch_dirs:
+            print("  --watch requires a folder path.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"\n  Loading detector...", end="", flush=True)
+        from detector import detector as ai_detector
+
+        ai_detector.load_model()
+        mode = "ML + Heuristic" if ai_detector.ml_mode else "Heuristic"
+        print(f" ready ({mode} mode)")
+        print(f"  Watching {', '.join(watch_dirs)} for new files...")
+        print(f"  Press Ctrl+C to stop.\n")
+
+        seen = set()
+        supported = image_exts | video_exts
+        # Seed with existing files
+        for d in watch_dirs:
+            for f in os.listdir(d):
+                seen.add(os.path.join(d, f))
+
+        try:
+            while True:
+                for d in watch_dirs:
+                    for f in sorted(os.listdir(d)):
+                        fpath = os.path.join(d, f)
+                        if fpath in seen:
+                            continue
+                        seen.add(fpath)
+                        ext = os.path.splitext(f)[1].lower()
+                        if ext not in supported:
+                            continue
+                        # Wait a moment for file to finish writing
+                        time.sleep(0.5)
+                        try:
+                            if ext in video_exts:
+                                result = analyze_video(ai_detector, fpath)
+                            else:
+                                result = analyze_image(ai_detector, fpath)
+                            print_result(fpath, result, verbose=args.verbose, use_json=args.json)
+                        except Exception as e:
+                            print(f"  Error: {f}: {e}", file=sys.stderr)
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n  Stopped watching.")
+        sys.exit(0)
 
     if not all_files:
         print("No files to check.", file=sys.stderr)
