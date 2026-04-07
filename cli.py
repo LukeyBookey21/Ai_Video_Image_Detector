@@ -151,6 +151,7 @@ Examples:
     parser.add_argument("files", nargs="+", help="Image/video files or folders to check")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed signal breakdown")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--csv", action="store_true", help="Output one CSV line per file (file,verdict,probability)")
     parser.add_argument("--watch", action="store_true", help="Watch folder for new files and auto-check them")
     parser.add_argument("--threshold", type=float, default=None, help="Custom detection threshold (default: 0.33)")
     args = parser.parse_args()
@@ -227,17 +228,21 @@ Examples:
         sys.exit(1)
 
     # Load detector
-    if not args.json:
+    quiet = args.json or args.csv
+    if not quiet:
         print(f"\n  Loading detector...", end="", flush=True)
 
     from detector import detector as ai_detector
 
     ai_detector.load_model()
 
-    if not args.json:
+    if not quiet:
         mode = "ML + Heuristic" if ai_detector.ml_mode else "Heuristic"
         print(f" ready ({mode} mode)")
         print(f"  Checking {len(all_files)} file{'s' if len(all_files) != 1 else ''}...")
+
+    if args.csv:
+        print("file,verdict,ai_probability,confidence")
 
     # Process files
     results = []
@@ -255,20 +260,26 @@ Examples:
                     print(f"\n  Skipping {os.path.basename(path)} (unsupported format)")
                 continue
 
-            print_result(path, result, verbose=args.verbose, use_json=args.json)
+            if args.csv:
+                v = result.get("verdict", "")
+                print(f"{os.path.basename(path)},{v},{result.get('ai_probability', 0)},{result.get('confidence', 0)}")
+            else:
+                print_result(path, result, verbose=args.verbose, use_json=args.json)
             results.append(
                 {"file": path, "verdict": result.get("verdict"), "ai_probability": result.get("ai_probability")}
             )
         except Exception as e:
             if args.json:
                 print(json.dumps({"file": path, "error": str(e)}))
+            elif args.csv:
+                print(f"{os.path.basename(path)},ERROR,0,0")
             else:
                 print(f"\n  Error on {os.path.basename(path)}: {e}", file=sys.stderr)
 
     elapsed = round(time.time() - start, 1)
 
     # Summary
-    if not args.json and len(results) > 1:
+    if not quiet and len(results) > 1:
         ai_count = sum(1 for r in results if r["verdict"] == "AI-Generated")
         real_count = sum(1 for r in results if r["verdict"] == "Real/Authentic")
         print(f"\n  {'─' * 40}")
