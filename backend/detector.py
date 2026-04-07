@@ -1070,6 +1070,14 @@ class AIImageDetector:
         screenshot = self.screenshot_detector.analyze(image_rgb)
         ela = self._sanitize_dict(self.ela_analyzer.analyze(image_rgb))
 
+        # New modular signals
+        from signals import gan_fingerprint, diffusion_artifacts, noise_map, prnu
+
+        gan_fp = gan_fingerprint.analyze(image_rgb)
+        diffusion = diffusion_artifacts.analyze(image_rgb)
+        noise_inc = noise_map.analyze(image_rgb)
+        prnu_result = prnu.analyze(image_rgb)
+
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
         vit2_score = self.vit_deepfake.predict(image_rgb) if self.ml_mode else None
@@ -1145,6 +1153,13 @@ class AIImageDetector:
         # Add bonus signals as small adjustments
         ensemble_score += patch.get("ai_probability", 0) * 0.05
         ensemble_score += jpeg_ghost.get("ai_probability", 0) * 0.03
+        # New modular signals — added as bonus adjustments
+        # New signals only contribute when they are strong (score > 0.15)
+        # to avoid pushing borderline cases over the threshold
+        for sig, weight in [(gan_fp, 0.03), (diffusion, 0.02), (noise_inc, 0.02), (prnu_result, 0.02)]:
+            s = sig.get("score", 0)
+            if s > 0.20:
+                ensemble_score += s * weight
         # ELA kept for details/display but not in ensemble (too marginal, risks false positives)
 
         # JPEG ghost detection: high ghost score on a JPEG without EXIF = likely re-saved AI image
@@ -1232,6 +1247,19 @@ class AIImageDetector:
             details["screenshot_indicators"] = screenshot.get("indicators", [])
         if ela.get("ela_uniformity", 0) > 0:
             details["ela"] = {"uniformity": ela.get("ela_uniformity", 0), "mean_error": ela.get("ela_mean", 0)}
+        # New modular signals
+        if gan_fp.get("score", 0) > 0:
+            details["gan_fingerprint"] = gan_fp.get("details", {})
+            details["gan_fingerprint"]["score"] = gan_fp["score"]
+        if diffusion.get("score", 0) > 0:
+            details["diffusion_artifacts"] = diffusion.get("details", {})
+            details["diffusion_artifacts"]["score"] = diffusion["score"]
+        if noise_inc.get("score", 0) > 0:
+            details["noise_map"] = noise_inc.get("details", {})
+            details["noise_map"]["score"] = noise_inc["score"]
+        if prnu_result.get("score", 0) > 0:
+            details["prnu"] = prnu_result.get("details", {})
+            details["prnu"]["score"] = prnu_result["score"]
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
