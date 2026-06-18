@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import DetailedStats from './DetailedStats'
 import SignalSummary from './SignalSummary'
+import SignalRadar from './SignalRadar'
 
 function getConfidencePhrase(confidence, isAI) {
   const subject = isAI ? 'AI-generated' : 'authentic'
@@ -589,6 +590,9 @@ export default function ResultCard({ result }) {
               </div>
             </div>
           )}
+
+          {/* Signal radar chart */}
+          {result.feature_vector && <SignalRadar featureVector={result.feature_vector} />}
 
           {/* Detailed raw statistics */}
           <div className="px-6 py-3 border-t border-gray-800/50">
