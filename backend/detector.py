@@ -37,6 +37,9 @@ try:
 except ImportError:
     pass
 
+# Model version — bump minor when signals change, major when ensemble weights change
+MODEL_VERSION = "v2.1"
+
 
 # ─── SRM Filters (Steganalysis Rich Model) ───────────────────────────────────
 
@@ -1022,6 +1025,45 @@ class AIImageDetector:
                 result[k] = self._sanitize(v)
         return result
 
+    # Canonical feature order — must match training (scripts/train_ensemble.py)
+    META_FEATURES = [
+        "frequency", "statistical", "texture", "srm", "color", "metadata",
+        "face", "jpeg_ghost", "patch", "ela", "gan_fingerprint",
+        "diffusion_artifacts", "noise_map", "prnu", "copy_move",
+    ]
+
+    def _load_meta_classifier(self):
+        """Lazy-load the trained logistic-regression weights, if present."""
+        if hasattr(self, "_meta_weights"):
+            return self._meta_weights
+        import json
+
+        path = os.path.join(os.path.dirname(__file__), "..", "models", "ensemble_weights.json")
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            self._meta_weights = data
+            logging.info("Loaded ensemble meta-classifier (%d features)", len(data.get("coef", [])))
+        except Exception:
+            self._meta_weights = None
+        return self._meta_weights
+
+    def _meta_classifier_predict(self, feature_vector: dict) -> float | None:
+        """Apply the trained logistic regression. Returns probability or None."""
+        weights = self._load_meta_classifier()
+        if not weights:
+            return None
+        try:
+            coef = weights["coef"]
+            intercept = weights["intercept"]
+            features = weights.get("features", self.META_FEATURES)
+            z = intercept
+            for i, name in enumerate(features):
+                z += coef[i] * feature_vector.get(name, 0.0)
+            return float(1.0 / (1.0 + np.exp(-z)))
+        except Exception:
+            return None
+
     def _call_hive_api(self, raw_bytes: bytes) -> float | None:
         """Call Hive Moderation API for AI-generated image detection. Returns score or None."""
         hive_key = os.environ.get("HIVE_API_KEY", "")
@@ -1204,6 +1246,33 @@ class AIImageDetector:
             ensemble_score += 0.04  # Re-compressed image without camera data
 
         ensemble_score = min(max(ensemble_score, 0.0), 1.0)
+
+        # Ordered feature vector of every signal (used by meta-classifier + training)
+        feature_vector = {
+            "frequency": freq.get("ai_probability", 0),
+            "statistical": stat.get("ai_probability", 0),
+            "texture": texture.get("ai_probability", 0),
+            "srm": srm.get("ai_probability", 0),
+            "color": color.get("ai_probability", 0),
+            "metadata": meta.get("ai_probability", 0),
+            "face": face.get("ai_probability", 0) if has_faces else 0.0,
+            "jpeg_ghost": jpeg_ghost.get("ai_probability", 0),
+            "patch": patch.get("ai_probability", 0),
+            "ela": ela.get("ai_probability", 0),
+            "gan_fingerprint": gan_fp.get("score", 0),
+            "diffusion_artifacts": diffusion.get("score", 0),
+            "noise_map": noise_inc.get("score", 0),
+            "prnu": prnu_result.get("score", 0),
+            "copy_move": copy_move_result.get("score", 0),
+        }
+
+        # If a trained meta-classifier exists, blend its prediction with the
+        # hand-tuned ensemble score (50/50) for a calibrated result.
+        meta_prob = self._meta_classifier_predict(feature_vector)
+        if meta_prob is not None:
+            ensemble_score = 0.5 * ensemble_score + 0.5 * meta_prob
+            ensemble_score = min(max(ensemble_score, 0.0), 1.0)
+
         # Detection threshold calibrated from benchmark results — see BENCHMARK.md
         detection_threshold = 0.33
         verdict = "AI-Generated" if ensemble_score > detection_threshold else "Real/Authentic"
@@ -1325,8 +1394,10 @@ class AIImageDetector:
             "confidence": round(confidence * 100, 1),
             "ai_probability": round(ensemble_score * 100, 1),
             "detection_mode": mode,
+            "model_version": MODEL_VERSION,
             "explanation": explanation,
             "details": details,
+            "feature_vector": feature_vector,
         }
 
     def _generate_explanation(self, verdict, score, freq, stat, texture, srm, meta, color, face, vit1, vit2, mode):
