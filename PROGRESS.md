@@ -4,9 +4,11 @@ Continuation notes for autonomous development sessions.
 
 ## Current State (last session)
 
-- **18 detection signals** (15 image-level in the feature vector + video signals)
-- **Data-driven ensemble meta-classifier** blends 50/50 with hand-tuned weights
+- **20 detection signals** (17 image-level in the feature vector + video signals)
+- **Data-driven ensemble meta-classifier** (17 features) blends 50/50 with hand-tuned weights
 - **Model version:** v2.1 (in every API response)
+- **PDF forensic report**, **signal radar chart**, **evidence panel** UI all live
+- Built via multi-agent parallelism: agents create isolated files, integration done centrally
 
 ### Test baseline (must not regress)
 - Unit tests: `cd backend && python test_detector.py` → **6/6**
@@ -36,6 +38,19 @@ Re-download verification images to `/tmp/verify/{real,ai}` from GitHub raw
 - ✅ Tier 5 #16: Model versioning (`MODEL_VERSION` in detector.py)
 - ✅ Tier 4 #13: PDF forensic report (`backend/pdf_report.py`, `POST /api/report`)
 - ✅ Tier 3 #12: Signal radar chart (`frontend/src/components/SignalRadar.jsx`, pure SVG)
+- ✅ Tier 1 #7: Lighting consistency signal (`backend/signals/lighting_consistency.py`) [agent-built]
+- ✅ Azimuthal frequency spectrum signal (`backend/signals/azimuthal_spectrum.py`) [agent-built]
+- ✅ Tier 2 #10: Signal redundancy analyzer (`scripts/analyze_redundancy.py`) [agent-built]
+- ✅ UI: Evidence panel — for/against AI in plain English (`frontend/src/components/EvidencePanel.jsx`) [agent-built]
+
+## Multi-Agent Pattern (works well)
+Spawn N general-purpose agents in ONE message, each owning exactly ONE new file
+(zero shared-file conflicts). Give each the exact signal interface contract.
+Then integrate centrally: wire into detector.py pool + feature_vector + META_FEATURES,
+retrain meta-classifier, run all test suites. KEY GOTCHA: agent signals may return
+np.bool_/np.float — _safe() now routes every signal through _sanitize_dict, and
+_sanitize handles np.bool_. Always test the API path (JSON serialization), not just
+direct detect_image calls.
 
 ## Architecture Notes
 - All signals run in a parallel pool in `detector.detect_image()` (~line 1060)
