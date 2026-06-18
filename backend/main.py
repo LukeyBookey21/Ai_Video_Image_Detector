@@ -80,6 +80,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 from detector import detector as ai_detector
 from video_processor import get_video_processor
 from heatmap import generate_heatmap
+from pdf_report import generate_report
 from database import (
     init_db,
     update_stats,
@@ -601,6 +602,34 @@ async def detect_batch(request: Request, files: list[UploadFile] = File(...)):
             results.append({"filename": file.filename, "error": str(e)})
 
     return {"results": results, "total": len(results)}
+
+
+@app.post("/api/report")
+@limiter.limit("20/hour")
+async def pdf_report(request: Request):
+    """Generate a downloadable PDF forensic report from an analysis result."""
+    from fastapi.responses import Response
+
+    try:
+        result = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+
+    if not isinstance(result, dict) or "verdict" not in result:
+        raise HTTPException(status_code=400, detail="Body must be an analysis result object.")
+
+    try:
+        pdf_bytes = generate_report(result)
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate report.")
+
+    verdict_slug = "ai-generated" if result.get("verdict") == "AI-Generated" else "authentic"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="ai-detector-report-{verdict_slug}.pdf"'},
+    )
 
 
 @app.post("/api/compare")

@@ -14,3 +14,4 @@ filelock>=3.12.0
 # Uncomment the lines below to enable the pre-trained ViT detector:
 # torch>=2.0.0
 # transformers>=4.30.0
+reportlab>=4.0.0
