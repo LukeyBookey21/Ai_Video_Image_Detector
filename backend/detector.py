@@ -1059,7 +1059,7 @@ class AIImageDetector:
 
         # Run all heuristic analyzers concurrently
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from signals import gan_fingerprint, diffusion_artifacts, noise_map, prnu
+        from signals import gan_fingerprint, diffusion_artifacts, noise_map, prnu, copy_move
 
         def _safe(fn, *args):
             try:
@@ -1084,6 +1084,7 @@ class AIImageDetector:
                 pool.submit(_safe, diffusion_artifacts.analyze, image_rgb): "diffusion",
                 pool.submit(_safe, noise_map.analyze, image_rgb): "noise_inc",
                 pool.submit(_safe, prnu.analyze, image_rgb): "prnu_result",
+                pool.submit(_safe, copy_move.analyze, image_rgb): "copy_move",
             }
             results = {}
             for future in as_completed(futures):
@@ -1105,6 +1106,7 @@ class AIImageDetector:
         diffusion = results.get("diffusion", {})
         noise_inc = results.get("noise_inc", {})
         prnu_result = results.get("prnu_result", {})
+        copy_move_result = results.get("copy_move", {})
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -1184,7 +1186,13 @@ class AIImageDetector:
         # New modular signals — added as bonus adjustments
         # New signals only contribute when they are strong (score > 0.15)
         # to avoid pushing borderline cases over the threshold
-        for sig, weight in [(gan_fp, 0.03), (diffusion, 0.02), (noise_inc, 0.02), (prnu_result, 0.02)]:
+        for sig, weight in [
+            (gan_fp, 0.03),
+            (diffusion, 0.02),
+            (noise_inc, 0.02),
+            (prnu_result, 0.02),
+            (copy_move_result, 0.03),
+        ]:
             s = sig.get("score", 0)
             if s > 0.20:
                 ensemble_score += s * weight
@@ -1288,6 +1296,9 @@ class AIImageDetector:
         if prnu_result.get("score", 0) > 0:
             details["prnu"] = prnu_result.get("details", {})
             details["prnu"]["score"] = prnu_result["score"]
+        if copy_move_result.get("score", 0) > 0:
+            details["copy_move"] = copy_move_result.get("details", {})
+            details["copy_move"]["score"] = copy_move_result["score"]
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(
