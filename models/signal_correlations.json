@@ -1,0 +1,403 @@
+{
+  "signals": [
+    "frequency",
+    "statistical",
+    "texture",
+    "srm",
+    "color",
+    "metadata",
+    "face",
+    "jpeg_ghost",
+    "patch",
+    "ela",
+    "gan_fingerprint",
+    "diffusion_artifacts",
+    "noise_map",
+    "prnu",
+    "copy_move"
+  ],
+  "n_images": 8,
+  "fire_threshold": 0.3,
+  "redundant_threshold": 0.85,
+  "correlation_matrix": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      -1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      -1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      -1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      -1.0,
+      0.0,
+      0.0,
+      -1.0,
+      -1.0,
+      1.0,
+      0.0,
+      -1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      1.0,
+      -1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  ],
+  "redundant_pairs": [
+    {
+      "signal_a": "frequency",
+      "signal_b": "srm",
+      "correlation": 1.0,
+      "recommend_downweight": "srm"
+    },
+    {
+      "signal_a": "frequency",
+      "signal_b": "color",
+      "correlation": 1.0,
+      "recommend_downweight": "color"
+    },
+    {
+      "signal_a": "frequency",
+      "signal_b": "metadata",
+      "correlation": -1.0,
+      "recommend_downweight": "metadata"
+    },
+    {
+      "signal_a": "frequency",
+      "signal_b": "jpeg_ghost",
+      "correlation": 1.0,
+      "recommend_downweight": "jpeg_ghost"
+    },
+    {
+      "signal_a": "srm",
+      "signal_b": "color",
+      "correlation": 1.0,
+      "recommend_downweight": "color"
+    },
+    {
+      "signal_a": "srm",
+      "signal_b": "metadata",
+      "correlation": -1.0,
+      "recommend_downweight": "metadata"
+    },
+    {
+      "signal_a": "srm",
+      "signal_b": "jpeg_ghost",
+      "correlation": 1.0,
+      "recommend_downweight": "jpeg_ghost"
+    },
+    {
+      "signal_a": "color",
+      "signal_b": "metadata",
+      "correlation": -1.0,
+      "recommend_downweight": "metadata"
+    },
+    {
+      "signal_a": "color",
+      "signal_b": "jpeg_ghost",
+      "correlation": 1.0,
+      "recommend_downweight": "jpeg_ghost"
+    },
+    {
+      "signal_a": "metadata",
+      "signal_b": "jpeg_ghost",
+      "correlation": -1.0,
+      "recommend_downweight": "jpeg_ghost"
+    }
+  ],
+  "signal_stats": {
+    "frequency": {
+      "mean": 0.68,
+      "fire_rate_pct": 100.0
+    },
+    "statistical": {
+      "mean": 0.33,
+      "fire_rate_pct": 100.0
+    },
+    "texture": {
+      "mean": 0.16,
+      "fire_rate_pct": 0.0
+    },
+    "srm": {
+      "mean": 0.38,
+      "fire_rate_pct": 100.0
+    },
+    "color": {
+      "mean": 0.1,
+      "fire_rate_pct": 0.0
+    },
+    "metadata": {
+      "mean": 0.53,
+      "fire_rate_pct": 100.0
+    },
+    "face": {
+      "mean": 0.0,
+      "fire_rate_pct": 0.0
+    },
+    "jpeg_ghost": {
+      "mean": 0.05,
+      "fire_rate_pct": 0.0
+    },
+    "patch": {
+      "mean": 0.0,
+      "fire_rate_pct": 0.0
+    },
+    "ela": {
+      "mean": 0.12,
+      "fire_rate_pct": 0.0
+    },
+    "gan_fingerprint": {
+      "mean": 0.0187,
+      "fire_rate_pct": 0.0
+    },
+    "diffusion_artifacts": {
+      "mean": 0.0,
+      "fire_rate_pct": 0.0
+    },
+    "noise_map": {
+      "mean": 0.15,
+      "fire_rate_pct": 0.0
+    },
+    "prnu": {
+      "mean": 0.04,
+      "fire_rate_pct": 0.0
+    },
+    "copy_move": {
+      "mean": 0.0,
+      "fire_rate_pct": 0.0
+    }
+  }
+}

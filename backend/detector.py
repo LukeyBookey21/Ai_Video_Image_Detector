@@ -1008,6 +1008,8 @@ class AIImageDetector:
 
     @staticmethod
     def _sanitize(val):
+        if isinstance(val, (bool, np.bool_)):
+            return bool(val)
         if isinstance(val, (float, np.floating)):
             return 0.0 if not np.isfinite(val) else float(val)
         if isinstance(val, np.integer):
@@ -1030,6 +1032,7 @@ class AIImageDetector:
         "frequency", "statistical", "texture", "srm", "color", "metadata",
         "face", "jpeg_ghost", "patch", "ela", "gan_fingerprint",
         "diffusion_artifacts", "noise_map", "prnu", "copy_move",
+        "azimuthal_spectrum", "lighting_consistency",
     ]
 
     def _load_meta_classifier(self):
@@ -1101,11 +1104,19 @@ class AIImageDetector:
 
         # Run all heuristic analyzers concurrently
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from signals import gan_fingerprint, diffusion_artifacts, noise_map, prnu, copy_move
+        from signals import (
+            gan_fingerprint,
+            diffusion_artifacts,
+            noise_map,
+            prnu,
+            copy_move,
+            azimuthal_spectrum,
+            lighting_consistency,
+        )
 
         def _safe(fn, *args):
             try:
-                return fn(*args)
+                return self._sanitize_dict(fn(*args))
             except Exception:
                 return {}
 
@@ -1127,6 +1138,8 @@ class AIImageDetector:
                 pool.submit(_safe, noise_map.analyze, image_rgb): "noise_inc",
                 pool.submit(_safe, prnu.analyze, image_rgb): "prnu_result",
                 pool.submit(_safe, copy_move.analyze, image_rgb): "copy_move",
+                pool.submit(_safe, azimuthal_spectrum.analyze, image_rgb): "azimuthal",
+                pool.submit(_safe, lighting_consistency.analyze, image_rgb): "lighting",
             }
             results = {}
             for future in as_completed(futures):
@@ -1149,6 +1162,8 @@ class AIImageDetector:
         noise_inc = results.get("noise_inc", {})
         prnu_result = results.get("prnu_result", {})
         copy_move_result = results.get("copy_move", {})
+        azimuthal_result = results.get("azimuthal", {})
+        lighting_result = results.get("lighting", {})
 
         # Run ML models
         vit1_score = self.vit_primary.predict(image_rgb) if self.ml_mode else None
@@ -1234,6 +1249,8 @@ class AIImageDetector:
             (noise_inc, 0.02),
             (prnu_result, 0.02),
             (copy_move_result, 0.03),
+            (azimuthal_result, 0.03),
+            (lighting_result, 0.03),
         ]:
             s = sig.get("score", 0)
             if s > 0.20:
@@ -1264,6 +1281,8 @@ class AIImageDetector:
             "noise_map": noise_inc.get("score", 0),
             "prnu": prnu_result.get("score", 0),
             "copy_move": copy_move_result.get("score", 0),
+            "azimuthal_spectrum": azimuthal_result.get("score", 0),
+            "lighting_consistency": lighting_result.get("score", 0),
         }
 
         # If a trained meta-classifier exists, blend its prediction with the
@@ -1368,6 +1387,12 @@ class AIImageDetector:
         if copy_move_result.get("score", 0) > 0:
             details["copy_move"] = copy_move_result.get("details", {})
             details["copy_move"]["score"] = copy_move_result["score"]
+        if azimuthal_result.get("score", 0) > 0:
+            details["azimuthal_spectrum"] = azimuthal_result.get("details", {})
+            details["azimuthal_spectrum"]["score"] = azimuthal_result["score"]
+        if lighting_result.get("score", 0) > 0:
+            details["lighting_consistency"] = lighting_result.get("details", {})
+            details["lighting_consistency"]["score"] = lighting_result["score"]
 
         # ── Generate Explanation ──
         explanation = self._generate_explanation(

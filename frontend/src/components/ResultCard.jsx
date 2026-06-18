@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react'
 import DetailedStats from './DetailedStats'
 import SignalSummary from './SignalSummary'
 import SignalRadar from './SignalRadar'
+import EvidencePanel from './EvidencePanel'
 
 function getConfidencePhrase(confidence, isAI) {
   const subject = isAI ? 'AI-generated' : 'authentic'
@@ -196,6 +197,9 @@ export default function ResultCard({ result }) {
 
         {/* Signal summary — plain English */}
         <SignalSummary details={result.details} result={result} />
+
+        {/* Evidence breakdown — for/against AI */}
+        <EvidencePanel result={result} />
 
         {/* What should I do? */}
         <div className="px-6 py-5 border-t border-gray-800/50 bg-gray-900/80">
